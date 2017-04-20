@@ -294,37 +294,6 @@ Service version:
             
         return True              
         
-    def build_get_where( self, ds_args ):
-        '''Build the WHERE clause for a SELECT statement to get the data described in ds_args
-        '''
-        sql_args = dict()
-        other_args = dict()
-        for k,v in ds_args.items():
-            if k in ( 'starttime', 'endtime' ):
-                sql_args[k] = v
-            elif k == 'quality':
-                sql_args[k] = v
-            elif k in ('network','station','location','channel'):
-                sql_args[k] = []
-                for vv in [x.strip() for x in v.split(",")]:
-                    if k=='location' and vv == '--':
-                        vv = ''
-                    sql_args[k].append( '%s GLOB "%s"' % (k,vv) )
-            elif k in ('format','nodata','minimumlength','longestonly'):
-                other_args[k] = v
-                
-        conj = []
-        if 'starttime' in sql_args:
-            conj.append( 'endtime >= "%s"' % sql_args['starttime'] )
-        if 'endtime' in sql_args:
-            conj.append( 'starttime <= "%s"' % sql_args['endtime'] )
-        for k in ('network','station','location','channel'):
-            if k in sql_args:
-                conj.append( " OR ".join( sql_args[k] ))
-        if 'quality' in sql_args:
-            conj.append( " OR ".join( ['quality = "%s"' % v for v in sql_args['quality']] ))
-        return (" AND ".join( ["(%s)" % x for x in conj] ), other_args)
-
     def handle_trimming( self, stime, etime, row ):
         '''Get the time & byte-offsets for the data in time range (stime, etime)
         
@@ -333,6 +302,7 @@ Service version:
         
         Return [(start time, start offset),(end_time,end_offset)]
         '''
+        etime = UTCDateTime( row[20] )
         row_stime = UTCDateTime( row[5] )
         row_etime = UTCDateTime( row[6] )
 
@@ -340,7 +310,7 @@ Service version:
         block_start = int(row[9])
         block_end = block_start + int(row[10])
         if stime > row_stime or etime < row_etime:
-            tix = [x.split("=>") for x in row[11].split(",")]
+            tix = [x.split("=>") for x in row[12].split(",")]
             if tix[-1][0]=='latest':
                 tix[-1] = [str(row_etime.timestamp),block_end]
             to_x = [float(x[0]) for x in tix]
@@ -352,71 +322,10 @@ Service version:
             if e_index >= len(tix):
                 e_index = -1
             off_end = int(tix[e_index][1])
-            return ([to_x[s_index],off_start], [to_x[e_index],off_end])
+            return ([to_x[s_index],off_start,stime > row_stime], [to_x[e_index],off_end,etime < row_etime],)
         else:
-            return ([row_stime.timestamp,block_start], [row_etime.timestamp,block_end])       
+            return ([row_stime.timestamp,block_start,False], [row_etime.timestamp,block_end,False])       
         
-    def process_get_request( self, req, outstream ):
-        '''Given the query arguments in req, write the requested mseed data to outstream.
-        
-        Return "was successful"
-        '''
-        cols = ['network', 'station', 'location', 'channel', 'quality', 'starttime', 'endtime', 'samplerate', 'filename', 'byteoffset', 'bytes', 'timeindex']
-        stime = UTCDateTime( req['starttime'] )
-        etime = UTCDateTime( req['endtime'] )
-        where_clause,other_args = self.build_get_where( req )
-        traces = []
-
-        try:
-            conn = sqlite3.connect( self.server._db_path, 10.0 )
-        except Exception as err:
-            self.return_error( 500, "Could not connect to DB: %s" % str(err) )
-            return False
-
-        c = conn.cursor()
-        c.execute( "PRAGMA case_sensitive_like=ON;" )
-        sql = "SELECT %s from %s WHERE %s ORDER BY filename, byteoffset" % (",".join(cols),self.server._index_table,where_clause)
-        total_bytes = 0
-        try:
-            for row in c.execute( sql ):
-                trim_info = self.handle_trimming( stime, etime, row )
-                with open( row[8], "rb" ) as f:
-                    f.seek( trim_info[0][1] )
-                    fb = io.BytesIO( f.read( trim_info[1][1]-trim_info[0][1] ) )
-                st = mseed_read(fb)
-                tr = st[0]
-                if tr.stats.sampling_rate>0:
-                    tr.trim( stime, etime )
-                if tr.stats.npts > 0:
-                    traces.append( tr )
-                    total_bytes += tr.stats.mseed['filesize']
-                    if total_bytes > self.server._output_cap:
-                        self.return_error( 413, "Result exceeds cap of %d bytes" % self.server._output_cap)
-                        return False
-
-        except Exception as err:
-            import traceback
-            traceback.print_exc()
-            self.return_error( 500, "Error accessing data: %s" % str(err) )
-            return False
-            
-        if len(traces)==0:
-            self.return_error( int(req['nodata']), "No data matched slection" )
-            return False
-
-        logger.debug("Data identified (%d bytes)" % total_bytes)
-        try:
-            st = Stream( traces=traces )
-            st.write( outstream, format="MSEED" )
-        except Exception as err:
-            import traceback
-            traceback.print_exc()
-            self.return_error( 500, "Error returning mseed data: %s" % str(err) )
-            return False
-
-        logger.info( "%d bytes transferred for request %s" % (total_bytes, self.path) )
-        return True
-                   
     # GET
     def do_GET(self):
         '''Handle a GET request
@@ -428,8 +337,11 @@ Service version:
         if not self.parse_fdsnws_url(True):
             return
                     
+        # Parse the query string
         qry = parse_qs( req.query )
         supported = ('starttime','endtime','network','station','location','channel','quality','minimumlength','longestonly','format','nodata')
+        required = ['network','station','location','channel','starttime','endtime']
+        bulk_prefix = ('quality','minimumlength','longestonly')
         sql_qry = dict( starttime=['1970-01-01'], endtime=['2170-12-31T23:59:59.999999'], format=['miniseed'], nodata=['204'],
                         network=['*'], station=['*'], location=['*'], channel=['*'], quality=['B'], minimumlength=['0.0'], longestonly=['FALSE'] )
         abbreviations = {'start':'starttime', 'end':'endtime', 'loc':'location', 'net':'network', 'sta':'station', 'cha':'channel'}
@@ -442,6 +354,8 @@ Service version:
                 self.return_error( 400, "Multiple '%s' parameters not allowed." % k )
                 return
             else:
+                if k in required:
+                    required.remove(k)
                 v = v[0]
                 if k.endswith('time'):
                     try:
@@ -476,19 +390,24 @@ Service version:
                         return
                 sql_qry[k] = [v]
 
-        # Send response status code
-        self.send_response(200)
- 
-        # Send headers
-        if sql_qry['format']=='miniseed':
-            self.send_header('Content-type','application/vnd.fdsn.mseed')
-        elif sql_qry['format']=='text':
-            self.send_header('Content-type','text/plain')
-        self.end_headers()
- 
-        if not self.process_get_request( {k:v[0] for k,v in sql_qry.items()}, self.wfile ):
+        if len(required)>0:
+            self.return_error( 400, "Missing parameter%s: %s" % ("" if len(required)==1 else "s", ", ".join(required) ) )
             return
-            
+        
+        # Build a string for the matching request as a POST body
+        bulk = []
+        for k in bulk_prefix:
+            bulk.append( "%s=%s" % (k, sql_qry[k][0]) )
+        for n in sql_qry['network'][0].split(","):
+            for s in sql_qry['station'][0].split(","):
+                for l in sql_qry['location'][0].split(","):
+                    if l=='':
+                        l="--"
+                    for c in sql_qry['channel'][0].split(","):
+                        bulk.append( "%s %s %s %s %s %s" % (n,s,l,c,sql_qry['starttime'][0],sql_qry['endtime'][0]) )
+
+        self.common_process( "\n".join( bulk ) )
+        
         return
  
     # POST
@@ -501,74 +420,95 @@ Service version:
         if not self.parse_fdsnws_url(True):
             return
 
+        self.common_process()
+        
+        return
+
+    def common_process( self, request_text=None ):
+        '''Common processing for both GET and POST requests
+        '''
+        
+        # Get the parameters of the request
         try:
-            prefix, request = self.read_request_file()
+            prefix, request = self.read_request_file( request_text )
         except Exception as err:
             self.return_error( 400, str(err) )
             return
-            
-        print(request)
+                    
+        # Get the corresponding index DB entries
         try:
             index_rows = self.fetch_index_rows( prefix, request )
         except Exception as err:
             self.return_error( 400, str(err) )
             return
 
+        # Pre-scan the index rows, to see if the request is small enough to satisfy
         traces = []
         total_bytes = 0
         try:
             for row in index_rows:
-                stime = UTCDateTime( row[5] )
-                etime = UTCDateTime( row[6] )
+                stime = UTCDateTime( row[19] )
+                etime = UTCDateTime( row[20] )
                 trim_info = self.handle_trimming( stime, etime, row )
-                bytes = trim_info[1][1]-trim_info[0][1]
-                
-                with open( row[8], "rb" ) as f:
-                    f.seek( trim_info[0][1] )
-                    fb = io.BytesIO( f.read( bytes ) )
-                st = mseed_read(fb)
-                tr = st[0]
-                if tr.stats.sampling_rate>0:
-                    tr.trim( stime, etime )
-                if tr.stats.npts > 0:
-                    traces.append( tr )
-                    total_bytes += tr.stats.mseed['filesize']
-                    if total_bytes > self.server._output_cap:
-                        self.return_error( 413, "Result exceeds cap of %d bytes" % self.server._output_cap)
-                        return False
+                total_bytes += trim_info[1][1]-trim_info[0][1]
+                if total_bytes > self.server._output_cap:
+                    self.return_error( 413, "Result exceeds cap of %d bytes" % self.server._output_cap)
+                    return False
         except Exception as err:
-            self.return_error( 500, "Error accessing data: %s" % str(err) )
+            import traceback
+            traceback.print_exc()
+            self.return_error( 500, "Error accessing data index: %s" % str(err) )
             return False
-            
-        if len(traces)==0:
+
+        # Error if request matches no data
+        if total_bytes==0:
             self.return_error( int(req['nodata']), "No data matched slection" )
             return False
 
         # Send response status code
         self.send_response(200)
- 
+
         # Send headers
         self.send_header('Content-type','application/vnd.fdsn.mseed')
         self.end_headers()
  
+        # Get & return the actual data
+        total_bytes = 0
         try:
-            st = Stream( traces=traces )
-            st.write( self.wfile, format="MSEED" )
-        except Exception as err:
-            self.return_error( 500, "Error returning data: %s" % str(err) )
-            return False
+            for row in index_rows:
+                stime = UTCDateTime( row[19] )
+                etime = UTCDateTime( row[20] )
+                trim_info = self.handle_trimming( stime, etime, row )
+                bytes = trim_info[1][1]-trim_info[0][1]
+                
+                with open( row[8], "rb" ) as f:
+                    f.seek( trim_info[0][1] )
+                    raw_data = f.read( trim_info[1][1]-trim_info[0][1] )
+                    if row[7]>0 and (trim_info[0][2] or trim_info[1][2]):
+                        tr = mseed_read( io.BytesIO( raw_data ) )[0]
+                        tr.trim( stime, etime )
+                        st = Stream( traces=[tr] )
+                        st.write( self.wfile, format="MSEED" )
+                    else:
+                        self.wfile.write( raw_data )
 
+        except Exception as err:
+            self.return_error( 500, "Error accessing data: %s" % str(err) )
+            return False
+            
         logger.info( "%d bytes transferred for request %s" % (total_bytes, self.path) )
         return
-
-    def read_request_file(self):
+        
+    def read_request_file(self,request_text=None):
         '''Read a specified request file and return it as a list of tuples.
         
-        Fprmat of first 3 lines of file must be:
+        If request_text is None, it was a POST request, and must be read from its body
+        
+        Format of first 3 lines of file must be a subset (and possible reordering) of:
           quality=<quality>
           minimumlength=<float>
           longestonly=<TRUE|FALSE>
-        These values, in this order, will go into `prefix`
+        These key-value pairs (with default values if appropriate) will go into prefix
 
         Expected format for the remaining lines is:
           Network Station Location Channel StartTime EndTime
@@ -585,19 +525,23 @@ Service version:
         request = []
         linenumber = 1
         linematch = re.compile ('^[\w\?\*]{1,2}\s+[\w\?\*]{1,5}\s+[-\w\?\*]{1,2}\s+[\w\?\*]{1,3}\s+[-:T.*\d]+\s+[-:T.*\d]+$');
-        prefix = {'quality':'B','minimumlength':'0.0','longestonly':'FALSE'}
+        prefix = {'quality':'B','minimumlength':'0.0','longestonly':'false'}
         parts = ['quality','minimumlength','longestonly']
-        request_text = self.rfile.read(int(self.headers['Content-Length'])).decode("utf-8")
-        logger.info( "POST query:\n%s" % request_text )
+        if request_text==None:
+            request_text = self.rfile.read(int(self.headers['Content-Length'])).decode("utf-8")
+            logger.info( "POST query:\n%s" % request_text )
         inprefix = True
 
+        # Parse the lines
         for line in request_text.split('\n'):
             line = line.strip()
             
+            # Skip commented-out lines
             if line.startswith("#"):
                 linenumber = linenumber + 1
                 continue
                 
+            # Might be a prefix line; if not, assume no others are
             if inprefix:
                 prefix_bits = line.split("=")
                 if len(prefix_bits)==2:
@@ -606,7 +550,10 @@ Service version:
                         prefix[kind] = prefix_bits[1]
                         parts.remove(kind)
                         linenumber = linenumber + 1
+                        if len(parts) == 0:
+                            inprefix = False
                         continue
+                inprefix=False
 
             # Add line to request list if it matches validation regex
             if linematch.match(line):
@@ -717,7 +664,7 @@ Service version:
                         "ts.starttime,ts.endtime,ts.samplerate, "
                         "ts.filename,ts.byteoffset,ts.bytes,ts.hash, "
                         "ts.timeindex,ts.timespans,ts.timerates, "
-                        "ts.format,ts.filemodtime,ts.updated,ts.scanned "
+                        "ts.format,ts.filemodtime,ts.updated,ts.scanned, r.starttime, r.endtime "
                         "FROM {0} ts, {1} r "
                         "WHERE "
                         "  ts.network {2} r.network "
