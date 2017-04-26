@@ -13,7 +13,10 @@ from optparse import OptionParser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 import os.path
- 
+import time
+
+import ctypes
+from msriterator import MSR_iterator
 
 version = (1,1,0)
 logger = None
@@ -471,34 +474,73 @@ Service version:
         # Send headers
         self.send_header('Content-type','application/vnd.fdsn.mseed')
         self.end_headers()
- 
+
         # Get & return the actual data
         total_bytes = 0
+        start = time.time()
         try:
             for row in index_rows:
                 stime = UTCDateTime( row[19] )
                 etime = UTCDateTime( row[20] )
+                sepoch = stime.timestamp
+                eepoch = etime.timestamp
                 trim_info = self.handle_trimming( stime, etime, row )
-                bytes = trim_info[1][1]-trim_info[0][1]
-                
-                with open( row[8], "rb" ) as f:
-                    f.seek( trim_info[0][1] )
-                    raw_data = f.read( trim_info[1][1]-trim_info[0][1] )
-                    if row[7]>0 and (trim_info[0][2] or trim_info[1][2]):
-                        tr = mseed_read( io.BytesIO( raw_data ) )[0]
-                        tr.trim( stime, etime )
-                        st = Stream( traces=[tr] )
-                        st.write( self.wfile, format="MSEED" )
-                    else:
+                shipped_bytes = 0;
+
+                # Iterate through records in section if only part of the section is needed
+                if trim_info[0][2] or trim_info[1][2]:
+                    for msri in MSR_iterator( filename=row[8], startoffset=trim_info[0][1], dataflag=False ):
+                        offset = msri.get_offset()
+
+                        # Done if we are beyond end offset
+                        if offset >= trim_info[1][1]:
+                            break
+
+                        msrstart = msri.get_startepoch()
+                        msrend = msri.get_endepoch()
+                        reclen = msri.msr.contents.reclen
+
+                        # Process records that intersect with request time window
+                        if msrstart < eepoch and msrend > sepoch:
+
+                            # Trim record if coverage (samprate > 0) and partial overlap with request
+                            if row[7] > 0 and (msrstart < stime or msrend > etime):
+                                logger.debug ("Trimming record %s @ %s" % (msri.get_srcname(), msri.get_starttime()))
+                                tr = mseed_read( io.BytesIO(ctypes.string_at(msri.msr.contents.record, reclen)), format="MSEED" )[0]
+                                tr.trim( stime, etime )
+                                st = Stream( traces=[tr] )
+                                st.write( self.wfile, format="MSEED" )
+
+                            # Otherwise, write un-trimmed record
+                            else:
+                                # Construct to avoid copying the data, supposedly
+                                self.wfile.write( (ctypes.c_char * reclen).
+                                                  from_address(ctypes.addressof(msri.msr.contents.record.contents)) )
+
+                            shipped_bytes += reclen
+
+                        # Done if this record was the last in the section
+                        if (offset + reclen) >= trim_info[1][1]:
+                            break
+
+                # Otherwise, return the entire section
+                else:
+                    with open( row[8], "rb" ) as f:
+                        f.seek( trim_info[0][1] )
+                        raw_data = f.read( row[10] )
                         self.wfile.write( raw_data )
+                        shipped_bytes += row[10]
+
+                # TODO: shippedbytes have been tracked for this row
+                # All shipped bytes for each N_S_L_C should be accumulated for shipment log
 
         except Exception as err:
             self.return_error( 500, "Error accessing data: %s" % str(err) )
             return False
             
-        logger.info( "%d bytes transferred for request %s" % (total_bytes, self.path) )
+        logger.info( "%d bytes transferred for request %s in %d seconds" % (total_bytes, self.path, time.time() - start) )
         return
-        
+
     def read_request_file(self,request_text=None):
         '''Read a specified request file and return it as a list of tuples.
         
@@ -597,7 +639,7 @@ Service version:
         Return rows as list of tuples containing:
         (network,station,location,channel,quality,starttime,endtime,samplerate,
          filename,byteoffset,bytes,hash,timeindex,timespans,timerates,
-         format,filemodtime,updated,scanned)
+         format,filemodtime,updated,scanned,requeststart,requestend)
         '''
         index_rows = []
         my_uuid = uuid.uuid4().hex
