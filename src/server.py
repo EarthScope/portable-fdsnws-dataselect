@@ -504,7 +504,7 @@ Service version:
                         if msrstart < eepoch and msrend > sepoch:
 
                             # Trim record if coverage (samprate > 0) and partial overlap with request
-                            if row[7] > 0 and (msrstart < stime or msrend > etime):
+                            if row[7] > 0 and (msrstart < sepoch or msrend > eepoch):
                                 logger.debug ("Trimming record %s @ %s" % (msri.get_srcname(), msri.get_starttime()))
                                 tr = mseed_read( io.BytesIO(ctypes.string_at(msri.msr.contents.record, reclen)), format="MSEED" )[0]
                                 tr.trim( stime, etime )
