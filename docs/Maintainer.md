@@ -1,6 +1,6 @@
-# Instructions for updating the package in the reposiroty
+# Instructions for Updating the Package in the Repository
 
-0. Asumes you have already downloaded the `src` directory from here and made your changes.
+0. Assumes you have already downloaded the `src` directory from here and made your changes.
 
 1. Update the appropriate entries in setup.py; at the very least, update the version (or you won't be able to push the changes to the repository)
 
