@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    
+      <title>Portable-FDSNWS-Dataselect Help</title>
+      
+  <meta name="keywords" content="seismology, seismological data,
+  earthquakes, iris dmc" />
+  <meta name="description" content="IRIS is a consortium of
+  universities dedicated to the operation of science facilities
+  for the acquisition, management, and distribution of seismological
+  data." />
+  <!-- Forces IE to render in 'latest' compatible mode -->
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+      
+  <!--script type="text/javascript" src="//netdna.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script-->  
+  </head>
+  
+  <body>
+  
+    <h1>Portable FDSNWS Dataselect Help</h1>
+
+    <p><a href="index.html">Display Service Interface</a></p>
+
+    <h2>Description</h2>
+
+    <p>The <strong>fdsnws-dataselect</strong> service provides access to time series data for specified channels and time ranges.</p>
+
+	<p>Data are selected using <a href="http://ds.iris.edu/ds/nodes/dmc/data/formats/seed/">SEED</a> time series identifiers (network, station, location &amp; channel) in addition to time ranges.  Data are returned in <a href="http://ds.iris.edu/ds/nodes/dmc/data/formats/seed/">miniSEED</a> format.</p>
+
+	<p>This service is an implementation of the <a href="http://www.fdsn.org/webservices/">FDSN web service specification</a> version 1.</p>
+
+  	<p>To retrieve raw waveform data in miniSEED format, submit a request by either of two methods:
+	<ul>
+		<li><em>via HTTP GET</em> : Provide a series of parameter-value pairs in the URL that specify the start-time and end-time, along with the desired network(s), station(s), location(s) and  channel(s) . Wildcards are supported.  Please visit the fdsnws-dataselect service interface for parameter usage details.</li>
+		<li><em>via HTTP POST</em>: Submit a pre-formatted request (e.g. a file) to the service containing a list of the desired networks, stations, locations, channels, start-times and end-times.  The POSTing method is described in more detail on this page.</li>
+	</ul></p>
+
+	<p>This service is designed to handle very large data requests<sup class="footnote" id="fnrevd72c989c9e10401bb1ce9bf0037707c9"><a href="#fnd72c989c9e10401bb1ce9bf0037707c9">1</a></sup> and can easily be used with command line programs such as wget, curl or similar utilities.</p>
+
+	<h2 id="dataselection">Data selection</h2>
+
+	<p>A data selection is composed of a list of network, station, location, channel, start time and end time entries. Channel codes follow the conventions documented in <a href="http://www.fdsn.org/seed_manual/SEEDManual_V2.4_Appendix-A.pdf">Appendix A</a> of the <span class="caps">SEED</span> Manual.  The appendix has been reproduced <a href="http://ds.iris.edu/ds/nodes/dmc/data/formats/seed-channel-naming/">here</a> to be more easily searched.</p>
+
+	<p>Optional parameters allow for more detailed data selection and can include:
+	<ul>
+		<li>SEED quality/version, selection of a specific SEED data quality code (defaults to &#8220;best&#8221;)</li>
+		<li>Minimum segment length, limit data return to segments longer than a specified value</li>
+		<li>Longest segment only, limit data return to the longest segment per channel</li>
+	</ul></p>
+
+	<p>An example selection, submitted using HTTP POST, might look like:</p>
+
+<pre>TA A25A -- BHZ 2010-03-25T00:00:00 2010-04-01T00:00:00
+IU ANMO * BH? 2010-03-25T00:00:00 2010-04-01T00:00:00
+IU ANMO 10 HHZ 2010-03-25T00:00:00 2010-04-01T00:00:00
+II KURK 00 BHN 2010-03-25T00:00:00 2010-04-01T00:00:00</pre>
+
+	<ul>
+		<li>When the selected SEED quality is &#8220;best&#8221; (the default) all qualities available are merged together and overlap data is removed in order of increasing quality preference.</li>
+		<li>Glob expressions (wildcards) are allowed in all fields except date fields.</li>
+	</ul>
+
+	<h2>wget example</h2>
+
+	<p>Requests can be made with a selection file and the <code>wget</code> Unix command line utility.</p>
+
+<pre>$ cat waveform.request
+quality=B
+TA A25A -- BHZ 2010-03-25T00:00:00 2010-04-01T00:00:00
+TA A25A -- BHE 2010-03-25T00:00:00 2010-04-01T00:00:00</pre>
+
+<pre>$ wget --post-file=waveform.request -O TA.miniseed http://service.iris.edu/fdsnws/dataselect/1/query</pre>
+
+	<p>This will send the request to the server and save the results in a file name TA.miniseed</p>
+
+	<h2>cURL example</h2>
+
+	<p>Requests can also be made with a selection file and the <code>curl</code> Unix command line utility.</p>
+
+<pre>$ cat waveform.request
+quality=B
+TA A25A -- BHZ 2010-03-25T00:00:00 2010-04-01T00:00:00
+TA A25A -- BHE 2010-03-25T00:00:00 2010-04-01T00:00:00</pre>
+
+<pre>$ curl -L --data-binary @waveform.request -o TA.miniseed http://service.iris.edu/fdsnws/dataselect/1/query</pre>
+
+	<p>Here is the equivalent request using <em>query parameters</em> instead of a selection file&#8230;</p>
+
+<pre>$ curl -L -o TA.miniseed &#34;http://service.iris.edu/fdsnws/dataselect/1/query?net=TA&amp;sta=A25A&amp;cha=BHZ,BHE&amp;loc=--&amp;starttime=2010-03-25&amp;endtime=2010-04-01&#34;</pre>
+
+	<p>This will send the request to the server and save the results in a file name TA.miniseed</p>
+
+	<p>We recommend always using the <code>-L</code> option to allow curl to follow HTTP redirections specified by our systems.  The DMC uses HTTP redirection during maintenance to keep servicing requests.</p>
+
+	<p>You may wish to use the <code>-f</code> option. This will cause curl to return an exit code of 22 if data is not found or the request is improperly formatted.</p>
+
+	<p>See http://curl.haxx.se/docs/manpage.html for more information.</p>
+
+	<h2>Working with miniSEED</h2>
+
+	<p>A variety of software tools are available from the DMC to assist with organizing and viewing miniSEED data or converting it to another format.  Detailed descriptions and usage examples for each piece of software can be found by clicking the links below.  </p>
+
+	<p><a href="https://seiscode.iris.washington.edu/projects/mseed2sac">mseed2sac</a> &#8211; for converting miniSEED to <span class="caps">SAC</span> format<br />
+<a href="https://seiscode.iris.washington.edu/projects/mseed2ascii">mseed2ascii</a> &#8211; for converting miniSEED to <span class="caps">ASCII</span> formats<br />
+<a href="https://seiscode.iris.washington.edu/projects/dataselect">dataselect</a> &#8211; for selecting and sorting miniSEED<br />
+<a href="https://seiscode.iris.washington.edu/projects/msi">miniSEED Inspector</a> &#8211; for quickly parsing and summarizing miniSEED data<br />
+<a href="http://ds.iris.edu/ds/nodes/dmc/manuals/rdseed/">rdseed</a> &#8211; for reading and extracting data in <span class="caps">SEED</span> volumes. <span class="caps">NOTE</span>: A dataless <span class="caps">SEED</span> volume must be used in combination with miniSEED for most conversions.  A request must be submitted prior to downloading the rdseed software. <a href="http://ds.iris.edu/ds/nodes/dmc/forms/rdseed/">http://ds.iris.edu/ds/nodes/dmc/forms/rdseed</a></p>
+
+	<h2 id="restricteddata">Accessing restricted data</h2>
+
+	<p>Requesting restricted data via this web service requires authentication.  The authentication is done using a standard <span class="caps">HTTP</span> mechanism called <a href="https://en.wikipedia.org/wiki/Digest_access_authentication">digest access authentication</a>, a sort of 3-way handshake.  To submit a request with authentication credentials you would use the <code>queryauth</code> method of the service in place of the <code>query</code> method.  You must use a client that supports digest authentication, luckily such support is common.  All of the <a href="http://service.iris.edu/clients/"><span class="caps">IRIS</span> <span class="caps">DMC</span>&#8217;s clients</a> support accessing restricted data through digest authentication.</p>
+
+	<p>For example, submitting a request and subsequently initiating the authentication handshake would be done by requesting this <span class="caps">URL</span>:</p>
+
+<pre>http://service.iris.edu/fdsnws/dataselect/1/queryauth?net=IU&amp;sta=ANMO&amp;loc=00&amp;cha=BHZ&amp;start=2010-02-27T06:30:00&amp;end=2010-02-27T10:30:00</pre>
+
+	<p>This request could be submitted, along with authentication credentials, using a command line tool like <a href="http://curl.haxx.se/">curl</a>:</p>
+
+<pre>$ curl -L --digest --user EMAIL:PASSWORD -o data.mseed &#39;http://service.iris.edu/fdsnws/dataselect/1/queryauth?net=IU&amp;sta=ANMO&amp;loc=0Z&amp;start=2010-02-27T06:30:00&amp;end=2010-02-27T10:30:00&#39;</pre>
+
+	<p>where you replace <code>EMAIL</code> and <code>PASSWORD</code> with your own credentials.  If you are submitting this request from the command line, then for security purposes, you may consider not including <code>PASSWORD</code> in your request, as it is an optional parameter.  If only <code>EMAIL</code> is specified, then curl will prompt you for your password when the request is submitted.</p>
+
+	<p>You may try out authentication using your software with the following test credentials: email=nobody@iris.edu and password=anonymous.  A working version of the <a href="http://curl.haxx.se/">curl</a> example above using the test credentials would be:</p>
+
+<pre>$ curl -L --digest --user nobody@iris.edu:anonymous -o data.mseed &#39;http://service.iris.edu/fdsnws/dataselect/1/queryauth?net=IU&amp;sta=ANMO&amp;loc=00&amp;cha=BHZ&amp;start=2010-02-27T06:30:00&amp;end=2010-02-27T10:30:00&#39;</pre>
+
+	<p><strong>Note</strong>: A known problem can occur when repeatedly submitting <code>queryauth</code> requests for longer than a minute or so.  The symptom is an authentication failure occurring, despite using proper credentials, after one or more successful requests.  The work-around is for the client to re-submit the <code>queryauth</code> request.  Only a single re-submission should be needed.  If authentication repeatedly fails for <code>queryauth</code> requests, it indicates a different problem.  The <span class="caps">DMC</span> will continue to look for a long-term solution to this issue, but for now, the recommendation of a single retry should work robustly.</p>
+
+	<h2 id="considerations">Considerations</h2>
+
+	<p class="footnote" id="fnd72c989c9e10401bb1ce9bf0037707c9"><sup>1</sup> In general, it is preferable to not ask for too much data in a single request.	 Large requests take longer to complete. If a large request fails due to any networking issue, it will have to be resubmitted to be completed. This will cause the entire request to be completely reprocessed and re-transmitted. By breaking large requests into smaller requests, only the smaller pieces will need to be resubmitted and re-transmitted if there is a networking problem. Web service network connections will break after 5 to 10 minutes if no data is transmitted. For large requests, the fdsnws-dataselect web service can take several minutes before it starts returning data. When this happens, the web service may &#8220;flush&#8221; the <span class="caps">HTTP</span> headers with an &#8220;optimistic&#8221; success (200) code to the client in order to keep the network connection alive. This gives about 10 minutes to the underlying data retrieval mechanism to start pulling data out of the <span class="caps">IRIS</span> archive. Thus for larger requests, the <span class="caps">HTTP</span> return code can be unreliable. As data is streamed back to the client, the fdsnws-dataselect service partially buffers the returned data. During time periods when the underlying retrieval mechanism stalls, the web service will dribble the partial buffer to the client in an effort to keep the network connection alive.</p>
+
+	<p>It is less efficient to ask for too little data in each request. Each time a request is made, a network connection must be established and a request processing unit started. For performance reasons, it is better to group together selections from the same stations and place them in the same request. This is especially true of selections that cover the same time periods.</p>
+
+	<p>This utility should handle a week or month of data from several stations.</p>
+
+	<h2 id="usage">Usage guidelines &amp; real time data</h2>
+
+	<p>All usage should follow the <a href="http://ds.iris.edu/ds/nodes/dmc/services/usage/">usage guidelines</a>, specifically do not make too many concurrent requests or requests too quickly.</p>
+
+	<p>This web service should not be used to retrieve continuous, real time data via repeated polling. Instead, the SeedLink server should be used when continuous data streams are needed.</p>
+
+  </body>
+</html>
