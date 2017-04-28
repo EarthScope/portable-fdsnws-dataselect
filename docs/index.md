@@ -13,7 +13,7 @@
 3.  There is no step 3!  You should now have an executable named `run_fdsnws_dataselect`.
 
 
-## How to Prepare your data for the Server:
+## How to Prepare your Data for the Server:
 
 1. Use the program mseedindex (https://github.com/iris-edu/mseedindex) to create a Sqlite database containing an index of the miniseed data you wish to make available through your server.
 
