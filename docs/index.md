@@ -29,12 +29,12 @@ There are other settings which are optional.
 
 3. Before the program can use your database, a table must be created in it.  This can be done with the command:
 
-    `portable_fdsnws_dataselect -i -c <path-to-your-config-file>`
+    `run_fdsnws_dataselect -i -c <path-to-your-config-file>`
     
 If `-c` is left out, the program will look for a config file named `server.ini` in the current directory
 
 ## How to Run your Server:
 
-    `portable_fdsnws_dataselect -c <path-to-your-config-file>`
+    `run_fdsnws_dataselect -c <path-to-your-config-file>`
 
 
