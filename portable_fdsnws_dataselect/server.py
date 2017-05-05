@@ -20,7 +20,7 @@ from portable_fdsnws_dataselect.msriterator import MSR_iterator
 
 from portable_fdsnws_dataselect import __file__ as pkg_path
 
-version = (1,1,0)
+version = (1,1,1)
 logger = None
 
 # Mapping of HTTP code to short descriptions
