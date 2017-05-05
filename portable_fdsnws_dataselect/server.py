@@ -814,7 +814,7 @@ def run(options,config,shiplogdir):
     '''
     logger.info('starting server...')
     db_path = config.get('index_db','path')
-    index_table = config.get('server','table') if config.has_option('server','table') else 'tsindex'
+    index_table = config.get('index_db','table') if config.has_option('server','table') else 'tsindex'
 
 
     class ThreadedServer(ThreadPoolMixIn, HTTPServer):
