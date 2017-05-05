@@ -26,12 +26,12 @@ logger = None
 # Mapping of HTTP code to short descriptions
 http_msgs = {
     200: "Successful request, results follow",
-    204: "Request was properly formatted and submitted but no data matches the selection", 
+    204: "Request was properly formatted and submitted but no data matches the selection",
     400: "Bad request",
     401: "Unauthorized, authentication required",
     403: "Authentication failed or access blocked to restricted data",
     404: "Request was properly formatted and submitted but no data matches the selection",
-    413: "Request would result in too much data being returned or the request itself is too large", 
+    413: "Request would result in too much data being returned or the request itself is too large",
     414: "Request URI too large",
     500: "Internal server error",
     503: "Service temporarily unavailable"
@@ -70,10 +70,10 @@ class ThreadPoolMixIn(ThreadingMixIn):
         # server main loop
         while True:
             self.handle_request()
-            
+
         self.server_close()
 
-    
+
     def process_request_thread(self):
         '''
         obtain request from queue instead of directly from server socket
@@ -81,7 +81,7 @@ class ThreadPoolMixIn(ThreadingMixIn):
         while True:
             ThreadingMixIn.process_request_thread(self, *self.requests.get())
 
-    
+
     def handle_request(self):
         '''
         simply collect requests and put them on the queue for the workers.
@@ -95,7 +95,7 @@ class ThreadPoolMixIn(ThreadingMixIn):
 
 # HTTPRequestHandler class
 class testHTTPServer_RequestHandler(BaseHTTPRequestHandler):
- 
+
     def do_HEAD(self):
         ''' Send response code & header for normal/successful response '''
         self.send_response(200)
@@ -111,7 +111,7 @@ class testHTTPServer_RequestHandler(BaseHTTPRequestHandler):
 
     def return_error( self, code, err_msg ):
         '''An error has occurred (code # code, details in err_msg)
-        
+
         Log it, return message page
         '''
         msg = '''Error %d: %s
@@ -120,13 +120,13 @@ class testHTTPServer_RequestHandler(BaseHTTPRequestHandler):
 
 Usage details are available from %s
 
-Request: 
+Request:
 %s
 
-Request Submitted: 
+Request Submitted:
 %s
 
-Service version: 
+Service version:
 Service: fdsnws-dataselect  version %d.%d.%d
 ''' % (code, http_msgs[code], err_msg, '/fdsnws/dataselect/%d/'%version[0], self.format_host(), datetime.datetime.now().isoformat(), version[0], version[1], version[2])
         self.send_response(code)
@@ -140,12 +140,12 @@ Service: fdsnws-dataselect  version %d.%d.%d
         '''Return the fuill URL for this host, w/ query (if provided)
         '''
         return "http://%s:%d%s%s" % (self.server.server_name, self.server.server_port, self.fdsnws_req.path, query)
-        
+
     def parse_fdsnws_url( self, get_request ):
         '''Parse the request in self.fdsnws_req, and do some validation.
-        
+
         get_request = "this is a GET request"
-        
+
         Return "Request needs to be processed"
         '''
 
@@ -155,7 +155,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         if not req.path.lower().startswith(prefix):
             self.return_error( 400, 'URL path must begin with "{0}"'.format(prefix) )
             return False
-            
+
         # Check for valid suffix to path & respond if not a data request
         path_tail = req.path.lower()[len(prefix):]
         # Check for usage documentation
@@ -182,7 +182,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         # Send response status code
         if path_tail in ('/version','/application.wadl'):
             self.send_response(200)
- 
+
             # Send headers; determine message to back to client
             if path_tail == '/version':
                 self.send_header('Content-type','text/plain')
@@ -286,36 +286,36 @@ Service: fdsnws-dataselect  version %d.%d.%d
 ''' % ("<",self.format_host())
             self.end_headers()
 
-                
+
             # Write content as utf-8 data)
             self.wfile.write(bytes(message, "utf8"))
             return False
-        
+
         if path_tail == '/queryauth':
             key = self.server.get_auth_key()
             ''' Present frontpage with user authentication. '''
             if self.headers.get('Authorization') == None:
                 self.do_AUTHHEAD()
-                self.wfile.write(bytes('No auth header received',"utf8") );        
+                self.wfile.write(bytes('No auth header received',"utf8") );
                 return False
 
             elif self.headers.get('Authorization') == 'Basic ' + str(key):
-                # Request is properly authorized; let caller process request   
-                return True   
+                # Request is properly authorized; let caller process request
+                return True
             else:
                 # Improper authorization sent; inform client
                 self.do_AUTHHEAD()
                 self.wfile.write(bytes('Invalid credentials',"utf8") );
                 return False
-            
-        return True              
-        
+
+        return True
+
     def handle_trimming( self, stime, etime, row ):
         '''Get the time & byte-offsets for the data in time range (stime, etime)
-        
+
         This is done by finding the smallest section of the data in row that falls within the desired time range
         and is identified by the timindex field of row
-        
+
         Return [(start time, start offset),(end_time,end_offset)]
         '''
         etime = UTCDateTime( row[20] )
@@ -340,8 +340,8 @@ Service: fdsnws-dataselect  version %d.%d.%d
             off_end = int(tix[e_index][1])
             return ([to_x[s_index],off_start,stime > row_stime], [to_x[e_index],off_end,etime < row_etime],)
         else:
-            return ([row_stime.timestamp,block_start,False], [row_etime.timestamp,block_end,False])       
-        
+            return ([row_stime.timestamp,block_start,False], [row_etime.timestamp,block_end,False])
+
     # GET
     def do_GET(self):
         '''Handle a GET request
@@ -349,10 +349,10 @@ Service: fdsnws-dataselect  version %d.%d.%d
         logger.info( "GET: %s" % self.path )
 
         self.fdsnws_req = req = urlparse(self.path)
-        
+
         if not self.parse_fdsnws_url(True):
             return
-                    
+
         # Parse the query string
         qry = parse_qs( req.query )
         supported = ('starttime','endtime','network','station','location','channel','quality','minimumlength','longestonly','format','nodata')
@@ -409,7 +409,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         if len(required)>0:
             self.return_error( 400, "Missing parameter%s: %s" % ("" if len(required)==1 else "s", ", ".join(required) ) )
             return
-        
+
         # Build a string for the matching request as a POST body
         bulk = []
         for k in bulk_prefix:
@@ -423,9 +423,9 @@ Service: fdsnws-dataselect  version %d.%d.%d
                         bulk.append( "%s %s %s %s %s %s" % (n,s,l,c,sql_qry['starttime'][0],sql_qry['endtime'][0]) )
 
         self.common_process( "\n".join( bulk ) )
-        
+
         return
- 
+
     # POST
     def do_POST(self):
         '''Handle a POST request
@@ -437,21 +437,21 @@ Service: fdsnws-dataselect  version %d.%d.%d
             return
 
         self.common_process()
-        
+
         return
 
     def common_process( self, request_text=None ):
         '''Common processing for both GET and POST requests
         '''
         global shiplogdir
-        
+
         # Get the parameters of the request
         try:
             prefix, request = self.read_request_file( request_text )
         except Exception as err:
             self.return_error( 400, str(err) )
             return
-                    
+
         # Get the corresponding index DB entries
         try:
             index_rows = self.fetch_index_rows( prefix, request )
@@ -488,7 +488,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         # Send headers
         self.send_header('Content-type','application/vnd.fdsn.mseed')
         self.end_headers()
- 
+
         # Get & return the actual data
         total_bytes = 0
         client_ip = self.address_string()
@@ -507,7 +507,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
                 eepoch = etime.timestamp
                 trim_info = self.handle_trimming( stime, etime, row )
                 shipped_bytes = 0;
-                
+
                 # Iterate through records in section if only part of the section is needed
                 if trim_info[0][2] or trim_info[1][2]:
                     for msri in MSR_iterator( filename=row[8], startoffset=trim_info[0][1], dataflag=False ):
@@ -560,7 +560,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         except Exception as err:
             self.return_error( 500, "Error accessing data: %s" % str(err) )
             return False
-            
+
         # Error if request matches no data
         if total_bytes==0:
             self.return_error( int(req['nodata']), "No data matched slection" )
@@ -571,12 +571,12 @@ Service: fdsnws-dataselect  version %d.%d.%d
             f.write( "\n".join( rows_shipped ) )
         logger.info( "%d bytes transferred for request %s in %d seconds" % (total_bytes, self.path, time.time() - start) )
         return
-        
+
     def read_request_file(self,request_text=None):
         '''Read a specified request file and return it as a list of tuples.
-        
+
         If request_text is None, it was a POST request, and must be read from its body
-        
+
         Format of first 3 lines of file must be a subset (and possible reordering) of:
           quality=<quality>
           minimumlength=<float>
@@ -589,7 +589,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         where the fields are space delimited
         and Network, Station, Location and Channel may contain '*' and '?' wildcards
         and StartTime and EndTime are in YYYY-MM-DDThh:mm:ss.ssssss format or are '*'
-        
+
         Empty locations must be indictaed with --
 
         Returned tuples have the same fields and ordering as the selection lines.
@@ -608,12 +608,12 @@ Service: fdsnws-dataselect  version %d.%d.%d
         # Parse the lines
         for line in request_text.split('\n'):
             line = line.strip()
-            
+
             # Skip commented-out lines
             if line.startswith("#"):
                 linenumber = linenumber + 1
                 continue
-                
+
             # Might be a prefix line; if not, assume no others are
             if inprefix:
                 prefix_bits = line.split("=")
@@ -653,10 +653,10 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
             linenumber = linenumber + 1
 
-        
+
         if len(request) == 0:
             raise ValueError( "No 'N/S/L/C start end' lines present" )
-            
+
         return prefix,request
 
     def fetch_index_rows(self, prefix, request):
@@ -682,7 +682,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
             raise ValueError(str(err))
 
         cur = conn.cursor()
-            
+
         # Store temporary table(s) in memory
         try:
             cur.execute("PRAGMA temp_store=MEMORY")
@@ -711,14 +711,14 @@ Service: fdsnws-dataselect  version %d.%d.%d
         # Determine if all_channel_summary table exists
         cur.execute("SELECT count(*) FROM sqlite_master WHERE type='table' and name='all_channel_summary'");
         acs_present = cur.fetchone()[0]
-    
+
         wildcards = False
         for req in request:
             for field in req:
                 if '*' in field or '?' in field:
                     wildcards = True
                     break
-                    
+
         if wildcards:
             # Resolve wildcards using all_channel_summary if present to:
             # a) resolve wildcards, allows use of '=' operator and table index
@@ -761,7 +761,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         conn.close()
 
         return index_rows
-        
+
     def resolve_request(self, cursor, requesttable):
         '''Resolve request table using all_channel_summary
         `cursor`: Database cursor
@@ -815,7 +815,7 @@ def run(options,config,shiplogdir):
     logger.info('starting server...')
     db_path = config.get('index_db','path')
     index_table = config.get('server','table') if config.has_option('server','table') else 'tsindex'
-  
+
 
     class ThreadedServer(ThreadPoolMixIn, HTTPServer):
         def __init__(self, address, handlerClass=testHTTPServer_RequestHandler):
@@ -828,7 +828,7 @@ def run(options,config,shiplogdir):
 
         def get_auth_key(self):
             return self.key
-         
+
     # Server settings
     server_address = (config.get('server','ip'), int(config.get('server','port')))
     httpd = ThreadedServer(server_address, testHTTPServer_RequestHandler)
@@ -849,7 +849,7 @@ def run(options,config,shiplogdir):
                 raise("Output Cap must be a positive integer")
         except:
             logger.critical("Invalid output cap (%s); exiting!" % config.get('server','output_cap'))
-            sys.exit(1)            
+            sys.exit(1)
     else:
         httpd._output_cap =  1000000000
     if config.has_option('server','maxsectiondays'):
@@ -857,13 +857,13 @@ def run(options,config,shiplogdir):
             httpd._maxsectiondays = int( config.get('server','maxsectiondays')  )
             if httpd._maxsectiondays <= 0:
                 logger.critical("Max Section Days must be positive integer, not %d; exiting!" % config.get('server',_maxsectiondays))
-                sys.exit(1)            
+                sys.exit(1)
         except:
             logger.critical("Invalid Max Section Days (%s); exiting!" % config.get('server','maxsectiondays'))
-            sys.exit(1)            
+            sys.exit(1)
     else:
         httpd._maxsectiondays = 10
-        
+
     msg = 'running dataselect server @ %s:%s' % (config.get('server','ip'), config.get('server','port'))
     logger.info(msg)
     print(msg)
@@ -872,14 +872,14 @@ def run(options,config,shiplogdir):
     logger.info('index table: %s' % httpd._index_table)
     logger.info('maxsectiondays: %s' % httpd._maxsectiondays)
     httpd.serve_forever()
- 
+
 def main():
     '''
     Read/validate options; read config file; set up logging
     Run the server
     '''
     global logger
-    
+
     # Build option parser
     parser = OptionParser(version="%%prog %d.%d.%d"%version)
     parser.add_option("-c", "--configfile", dest="configfile", default = "./server.ini",
@@ -893,8 +893,8 @@ def main():
 
     # Read options
     opts_args = parser.parse_args()
-    
-    # Read config file, if it exists where we were told    
+
+    # Read config file, if it exists where we were told
     config = configparser.ConfigParser()
 
     if opts_args[0].gen_config:
@@ -920,17 +920,17 @@ def main():
         if level_name not in level_names:
             logger.critical("logging:level not a valid logging level; exiting!" % level_name)
             sys.exit(1)
-    log_config = {'version':1, 
+    log_config = {'version':1,
                 'formatters': {
                     'default': {'format': '%(asctime)s - %(levelname)s - %(message)s', 'datefmt': '%Y-%m-%d %H:%M:%S'},
                 },
                 'handlers': {
                     'file': {
-                        'class':'logging.handlers.TimedRotatingFileHandler', 
-                        'level':level_name, 
-                        'filename':log_path, 
+                        'class':'logging.handlers.TimedRotatingFileHandler',
+                        'level':level_name,
+                        'filename':log_path,
                         'formatter':'default',
-                        'when':'d', 
+                        'when':'d',
                         'interval':1
                     } },
                 'loggers': {
@@ -940,8 +940,8 @@ def main():
     logging.config.dictConfig( log_config )
     logger = logging.getLogger('default')
     if config.has_option('logging','shiplogdir'):
-        shiplogdir =  config.get('logging','shiplogdir')    
-    
+        shiplogdir =  config.get('logging','shiplogdir')
+
     # Build list of required definitions form config file
     req_list = [('index_db','path')]
     if not opts_args[0].initialize:
@@ -955,10 +955,10 @@ def main():
             logger.critical(msg)
             print(msg)
             sys.exit(1)
-    
+
     # Check for existence of db file
     if not os.path.exists( config.get('index_db','path') ):
-        msg = "No file at %s; exiting!" % config.get('index_db','path') 
+        msg = "No file at %s; exiting!" % config.get('index_db','path')
         logger.critical(msg)
         print(msg)
         sys.exit(1)
@@ -998,7 +998,7 @@ def main():
     except:
         logger.critical("server:port must be a positive integer; exiting!")
         sys.exit(1)
-    
+
     # Start the server!
     try:
         run(opts_args[0],config,shiplogdir)
