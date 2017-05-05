@@ -16,7 +16,9 @@ import os.path
 import time
 
 import ctypes
-from msriterator import MSR_iterator
+from portable_fdsnws_dataselect.msriterator import MSR_iterator
+
+from portable_fdsnws_dataselect import __file__ as pkg_path
 
 version = (1,1,0)
 logger = None
@@ -125,9 +127,13 @@ Request Submitted:
 %s
 
 Service version: 
-%d.%d.%d
-''' % (code, http_msgs[code], err_msg, "doc uri", self.format_host(), datetime.datetime.now().isoformat(), version[0], version[1], version[2])
-        self.send_error(code, msg)
+Service: fdsnws-dataselect  version %d.%d.%d
+''' % (code, http_msgs[code], err_msg, '/fdsnws/dataselect/%d/'%version[0], self.format_host(), datetime.datetime.now().isoformat(), version[0], version[1], version[2])
+        self.send_response(code)
+        self.send_header('Content-type', 'text/plain')
+        self.send_header('Connection', 'close')
+        self.end_headers()
+        self.wfile.write(bytes(msg, "utf8"))
         logger.error( "Code:%d Error:%s Request:%s" % (code, err_msg, self.path) )
 
     def format_host( self, query='' ):
@@ -135,39 +141,50 @@ Service version:
         '''
         return "http://%s:%d%s%s" % (self.server.server_name, self.server.server_port, self.fdsnws_req.path, query)
         
-    def parse_fdsnws_url( self, get_call ):
+    def parse_fdsnws_url( self, get_request ):
         '''Parse the request in self.fdsnws_req, and do some validation.
+        
+        get_request = "this is a GET request"
         
         Return "Request needs to be processed"
         '''
+
+        # Check that it begins with /fdsnws/dataselect/1/
         req = self.fdsnws_req
-        prefix = '/fdsnws/dataselect/%d/'%version[0]
+        prefix = '/fdsnws/dataselect/%d'%version[0]
         if not req.path.lower().startswith(prefix):
             self.return_error( 400, 'URL path must begin with "{0}"'.format(prefix) )
             return False
             
-        # Check that it begins with /fdsnws/dataselect/1/
-        # followed by either:
-        #   query
-        #   queryauth
-        #   version
-        #   application.wadl
+        # Check for valid suffix to path & respond if not a data request
         path_tail = req.path.lower()[len(prefix):]
-        if get_call:
-            if path_tail not in ('query','queryauth','version','application.wadl'):
-                self.return_error( 400, 'GET URL path must end with /query, /queryauth, /version or /application.wadl' )
+        # Check for usage documentation
+        if path_tail in ('', '/', '/index.html','/help.html'):
+            if path_tail == '/help.html':
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html')
+                self.end_headers()
+                with open(os.path.join(os.path.dirname(pkg_path),'docs','help.html'),'r') as f:
+                    self.wfile.write(bytes(f.read(), "utf8"))
                 return False
-        else:
-            if path_tail not in ('query','queryauth'):
-                self.return_error( 400, 'POST URL path must end with /query or /queryauth' )
+            else:
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html')
+                self.end_headers()
+                with open(os.path.join(os.path.dirname(pkg_path),'docs','index.html'),'r') as f:
+                    self.wfile.write(bytes(f.read(), "utf8"))
                 return False
 
+        if path_tail not in ('/query','/queryauth','/version','/application.wadl'):
+            self.return_error( 400, 'URL path must end with /query, /queryauth, /version or /application.wadl' )
+            return False
+
         # Send response status code
-        if path_tail in ('version','application.wadl'):
+        if path_tail in ('/version','/application.wadl'):
             self.send_response(200)
  
             # Send headers; determine message to back to client
-            if path_tail == 'version':
+            if path_tail == '/version':
                 self.send_header('Content-type','text/plain')
                 message = "%d.%d.%d\n" % version
             else:
@@ -199,8 +216,6 @@ Service version:
                                <option value="M"/>
                                <option value="B"/>
                       </param>
-		      <param name="minimumlength" style="query" type="xs:double" default="0.0"/>
-		      <param name="longestonly" style="query" type="xs:boolean" default="false"/>
 		      <param name="format" style="query" type="xs:string" default="miniseed"/>
 		    </request>
                     <response>
@@ -234,8 +249,6 @@ Service version:
                                <option value="M"/>
                                <option value="B"/>
                       </param>
-		      <param name="minimumlength" style="query" type="xs:double" default="0.0"/>
-		      <param name="longestonly" style="query" type="xs:boolean" default="false"/>
 		      <param name="format" style="query" type="xs:string" default="miniseed"/>
 		    </request>
                     <response>
@@ -278,7 +291,7 @@ Service version:
             self.wfile.write(bytes(message, "utf8"))
             return False
         
-        if path_tail == 'queryauth':
+        if path_tail == '/queryauth':
             key = self.server.get_auth_key()
             ''' Present frontpage with user authentication. '''
             if self.headers.get('Authorization') == None:
@@ -344,7 +357,7 @@ Service version:
         qry = parse_qs( req.query )
         supported = ('starttime','endtime','network','station','location','channel','quality','minimumlength','longestonly','format','nodata')
         required = ['network','station','location','channel','starttime','endtime']
-        bulk_prefix = ('quality','minimumlength','longestonly')
+        bulk_prefix = ('quality',) #,'minimumlength','longestonly')
         sql_qry = dict( starttime=['1970-01-01'], endtime=['2170-12-31T23:59:59.999999'], format=['miniseed'], nodata=['204'],
                         network=['*'], station=['*'], location=['*'], channel=['*'], quality=['B'], minimumlength=['0.0'], longestonly=['FALSE'] )
         abbreviations = {'start':'starttime', 'end':'endtime', 'loc':'location', 'net':'network', 'sta':'station', 'cha':'channel'}
@@ -375,18 +388,18 @@ Service version:
                     if v not in ('D', 'R', 'Q', 'M', 'B'):
                         self.return_error( 400, "quality must be one of B, D, R, M or Q" )
                         return
-                elif k == 'minimumlength':
-                    try:
-                        if float(v) < 0:
-                            raise
-                    except:
-                        self.return_error( 400, "minimumlength must be a non-negative number" )
-                        return
-                elif k == 'longestonly':
-                    if v.upper() not in ('TRUE','FALSE'):
-                        self.return_error( 400, "longestonly must be either TRUE or FALSE" )
-                        return
-                    v = v.upper()
+#                 elif k == 'minimumlength':
+#                     try:
+#                         if float(v) < 0:
+#                             raise
+#                     except:
+#                         self.return_error( 400, "minimumlength must be a non-negative number" )
+#                         return
+#                 elif k == 'longestonly':
+#                     if v.upper() not in ('TRUE','FALSE'):
+#                         self.return_error( 400, "longestonly must be either TRUE or FALSE" )
+#                         return
+#                     v = v.upper()
                 elif k == 'format':
                     if v.lower() not in ('miniseed','text','xml'):
                         self.return_error( 400, "Unsupported format: '%s'" % v )
@@ -430,6 +443,7 @@ Service version:
     def common_process( self, request_text=None ):
         '''Common processing for both GET and POST requests
         '''
+        global shiplogdir
         
         # Get the parameters of the request
         try:
@@ -474,9 +488,16 @@ Service version:
         # Send headers
         self.send_header('Content-type','application/vnd.fdsn.mseed')
         self.end_headers()
-
+ 
         # Get & return the actual data
         total_bytes = 0
+        client_ip = self.address_string()
+        try:
+            client_host = socket.gethostbyaddr(client_ip)
+        except:
+            client_host = client_ip
+        user_agent = self.headers.get( 'User-Agent', '?' )
+        rows_shipped = ["START CLIENT %s [%s] @ %s [%s]" % (client_host, client_ip, self.log_date_time_string(),user_agent)]
         start = time.time()
         try:
             for row in index_rows:
@@ -486,7 +507,7 @@ Service version:
                 eepoch = etime.timestamp
                 trim_info = self.handle_trimming( stime, etime, row )
                 shipped_bytes = 0;
-
+                
                 # Iterate through records in section if only part of the section is needed
                 if trim_info[0][2] or trim_info[1][2]:
                     for msri in MSR_iterator( filename=row[8], startoffset=trim_info[0][1], dataflag=False ):
@@ -504,7 +525,7 @@ Service version:
                         if msrstart < eepoch and msrend > sepoch:
 
                             # Trim record if coverage (samprate > 0) and partial overlap with request
-                            if row[7] > 0 and (msrstart < sepoch or msrend > eepoch):
+                            if row[7] > 0 and (msrstart < stime or msrend > etime):
                                 logger.debug ("Trimming record %s @ %s" % (msri.get_srcname(), msri.get_starttime()))
                                 tr = mseed_read( io.BytesIO(ctypes.string_at(msri.msr.contents.record, reclen)), format="MSEED" )[0]
                                 tr.trim( stime, etime )
@@ -531,16 +552,26 @@ Service version:
                         self.wfile.write( raw_data )
                         shipped_bytes += row[10]
 
-                # TODO: shippedbytes have been tracked for this row
-                # All shipped bytes for each N_S_L_C should be accumulated for shipment log
+                if shipped_bytes != 0:
+                    total_bytes += shipped_bytes
+                    new_row = "%s_%s_%s_%s %d" % (row[0],row[1],row[2],row[3],shipped_bytes)
+                    rows_shipped.append( new_row )
 
         except Exception as err:
             self.return_error( 500, "Error accessing data: %s" % str(err) )
             return False
             
+        # Error if request matches no data
+        if total_bytes==0:
+            self.return_error( int(req['nodata']), "No data matched slection" )
+            return False
+
+        rows_shipped.append( "END CLIENT %s [%s] total_bytes: %d\n" % (client_host, client_ip, total_bytes) )
+        with open( os.path.join( self.server._shiplogdir, time.strftime( "shipment-%Y-%m-%dZ", time.gmtime( start ) ) ), "a" ) as f:
+            f.write( "\n".join( rows_shipped ) )
         logger.info( "%d bytes transferred for request %s in %d seconds" % (total_bytes, self.path, time.time() - start) )
         return
-
+        
     def read_request_file(self,request_text=None):
         '''Read a specified request file and return it as a list of tuples.
         
@@ -778,7 +809,7 @@ Service version:
 
         return
 
-def run(options,config):
+def run(options,config,shiplogdir):
     '''Run the server w/ the provided options and config
     '''
     logger.info('starting server...')
@@ -803,6 +834,7 @@ def run(options,config):
     httpd = ThreadedServer(server_address, testHTTPServer_RequestHandler)
     httpd._db_path = db_path
     httpd._index_table = index_table
+    httpd._shiplogdir = shiplogdir
     if config.has_option('server','username'):
         if config.has_option('server','password'):
             httpd.set_auth(config.get('server','username'), config.get('server','password'))
@@ -842,25 +874,45 @@ def run(options,config):
     httpd.serve_forever()
  
 def main():
+    '''
+    Read/validate options; read config file; set up logging
+    Run the server
+    '''
     global logger
+    
+    # Build option parser
     parser = OptionParser(version="%%prog %d.%d.%d"%version)
     parser.add_option("-c", "--configfile", dest="configfile", default = "./server.ini",
                       help="file to read configuration from")
+    parser.add_option("-s", "--sample_config",
+                      action="store_true", dest="gen_config", default=False,
+                      help="generate a sample config file & quit")
     parser.add_option("-i", "--init",
                       action="store_true", dest="initialize", default=False,
                       help="initialize auxiliary tables in db & quit")
 
+    # Read options
     opts_args = parser.parse_args()
     
+    # Read config file, if it exists where we were told    
     config = configparser.ConfigParser()
+
+    if opts_args[0].gen_config:
+        with open( os.path.join(os.path.dirname(pkg_path),'example','server.ini'), 'r' ) as f:
+            print( f.read() )
+        sys.exit(0)
+
     if not os.path.exists(opts_args[0].configfile):
         print("Could not read config file '%s'; exiting!" % opts_args[0].configfile)
         sys.exit(1)
     config.read(opts_args[0].configfile)
 
+    # Set up logging
     log_path = "./dataselect.log"
+    shiplogdir = "."
     if config.has_option('logging','path'):
         log_path =  config.get('logging','path')
+        shiplogdir = os.path.dirname( log_path )
     level_name = 'INFO'
     level_names = ['INFO','DEBUG','WARNING','ERROR','CRITICAL']
     if config.has_option('logging','level'):
@@ -870,7 +922,7 @@ def main():
             sys.exit(1)
     log_config = {'version':1, 
                 'formatters': {
-                    'default': {'format': '%(asctime)s - %(levelname)s - %(message)s', 'datefmt': '%Y-%m-%d %H:%M:%S'}
+                    'default': {'format': '%(asctime)s - %(levelname)s - %(message)s', 'datefmt': '%Y-%m-%d %H:%M:%S'},
                 },
                 'handlers': {
                     'file': {
@@ -887,12 +939,16 @@ def main():
             }
     logging.config.dictConfig( log_config )
     logger = logging.getLogger('default')
+    if config.has_option('logging','shiplogdir'):
+        shiplogdir =  config.get('logging','shiplogdir')    
     
+    # Build list of required definitions form config file
     req_list = [('index_db','path')]
     if not opts_args[0].initialize:
         req_list.append( ('server','ip') )
         req_list.append( ('server','port') )
 
+    # Verify presence of required definitions
     for s,o in req_list:
         if not config.has_option(s,o):
             msg = "%s:%s not provided in '%s'; exiting!" % (s,o,opts_args[0].configfile)
@@ -900,12 +956,14 @@ def main():
             print(msg)
             sys.exit(1)
     
+    # Check for existence of db file
     if not os.path.exists( config.get('index_db','path') ):
         msg = "No file at %s; exiting!" % config.get('index_db','path') 
         logger.critical(msg)
         print(msg)
         sys.exit(1)
 
+    # Perform initialization of all_channel_summary table in DB, if requested
     if opts_args[0].initialize:
         logger.info( "Initialization requested" )
         db_path = config.get('index_db','path')
@@ -933,7 +991,7 @@ def main():
         logger.info("Initialization completed successfully");
         sys.exit(0)
 
-  
+    # Validate server port
     try:
         if int(config.get('server','port')) <= 0:
             raise
@@ -941,7 +999,14 @@ def main():
         logger.critical("server:port must be a positive integer; exiting!")
         sys.exit(1)
     
-    run(opts_args[0],config)
+    # Start the server!
+    try:
+        run(opts_args[0],config,shiplogdir)
+    except:
+#         import traceback
+#         traceback.print_exc()
+        logger.info("shutting down")
+        print("\nshutting down")
 
 if __name__ == "__main__":
     main()
