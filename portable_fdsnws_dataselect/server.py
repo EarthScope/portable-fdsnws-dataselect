@@ -1008,7 +1008,7 @@ def main():
             return
         try:
             c = conn.cursor()
-            c.execute( "DROP TABLE all_channel_summary;" )
+            c.execute( "DROP TABLE IF EXISTS all_channel_summary;" )
             c.execute( "CREATE TABLE all_channel_summary AS"
                        "  SELECT network,station,location,channel,"
                        "  min(starttime) AS earliest, max(endtime) AS latest, datetime('now') as updt"
