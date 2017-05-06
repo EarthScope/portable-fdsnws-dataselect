@@ -935,42 +935,46 @@ def main():
     config.read(opts_args[0].configfile)
 
     # Set up logging
-    log_path = "./dataselect.log"
-    shiplogdir = "."
     if config.has_option('logging','path'):
-        log_path =  config.get('logging','path')
-        shiplogdir = os.path.dirname( log_path )
+        log_path = config.get('logging','path')
 
-    level_name = 'INFO'
-    level_names = ['INFO','DEBUG','WARNING','ERROR','CRITICAL']
-    if config.has_option('logging','level'):
-        level_name = config.get('logging','level').upper()
+        level_name = 'INFO'
+        level_names = ['DEBUG','INFO','WARNING','ERROR','CRITICAL']
+
+        if config.has_option('logging','level'):
+            level_name = config.get('logging','level').upper()
+
         if level_name not in level_names:
             logger.critical("logging level '%s' not valid, exiting!" % level_name)
             sys.exit(1)
 
-    log_config = {'version':1,
-                'formatters': {
-                    'default': {'format': '%(asctime)s - %(levelname)s - %(message)s', 'datefmt': '%Y-%m-%d %H:%M:%S'},
-                },
-                'handlers': {
-                    'file': {
-                        'class':'logging.handlers.TimedRotatingFileHandler',
-                        'level':level_name,
-                        'filename':log_path,
-                        'formatter':'default',
-                        'when':'d',
-                        'interval':1
-                    } },
-                'loggers': {
-                    'default': { 'level':level_name, 'handlers': ['file'] }
-                }
-            }
-    logging.config.dictConfig( log_config )
+        log_config = {'version':1,
+                      'formatters': {
+                          'default': {'format': '%(asctime)s - %(levelname)s - %(message)s', 'datefmt': '%Y-%m-%d %H:%M:%S'},
+                      },
+                      'handlers': {
+                          'file': {
+                              'class':'logging.handlers.TimedRotatingFileHandler',
+                              'level':level_name,
+                              'filename':log_path,
+                              'formatter':'default',
+                              'when':'d',
+                              'interval':1
+                          }
+                      },
+                      'loggers': {
+                          'default': { 'level':level_name, 'handlers': ['file'] }
+                      }
+        }
+        logging.config.dictConfig( log_config )
+
+    else:
+        # If no log file defined set log level for no output
+        logging.getLogger().setLevel(99)
+
     logger = logging.getLogger('default')
 
-    if config.has_option('logging','shiplogdir'):
-        shiplogdir =  config.get('logging','shiplogdir')
+    shiplogdir = config.get('logging','shiplogdir') if config.has_option('logging','shiplogdir') else None
 
     # List of required settings from config file
     req_list = [('index_db','path')]
