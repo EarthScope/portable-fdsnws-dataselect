@@ -94,7 +94,7 @@ class ThreadPoolMixIn(ThreadingMixIn):
             self.requests.put((request, client_address))
 
 # HTTPRequestHandler class
-class testHTTPServer_RequestHandler(BaseHTTPRequestHandler):
+class HTTPServer_RequestHandler(BaseHTTPRequestHandler):
 
     def do_HEAD(self):
         ''' Send response code & header for normal/successful response '''
@@ -818,7 +818,7 @@ def run(options,config,shiplogdir):
 
 
     class ThreadedServer(ThreadPoolMixIn, HTTPServer):
-        def __init__(self, address, handlerClass=testHTTPServer_RequestHandler):
+        def __init__(self, address, handlerClass=HTTPServer_RequestHandler):
             super().__init__(address, handlerClass)
             self.key = ''
 
@@ -831,7 +831,7 @@ def run(options,config,shiplogdir):
 
     # Server settings
     server_address = (config.get('server','ip'), int(config.get('server','port')))
-    httpd = ThreadedServer(server_address, testHTTPServer_RequestHandler)
+    httpd = ThreadedServer(server_address, HTTPServer_RequestHandler)
     httpd._db_path = db_path
     httpd._index_table = index_table
     httpd._shiplogdir = shiplogdir
