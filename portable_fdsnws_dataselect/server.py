@@ -9,7 +9,7 @@ import logging
 import logging.config
 import bisect
 import uuid, base64
-from optparse import OptionParser
+import argparse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 import os.path
@@ -907,32 +907,31 @@ def main():
     '''
     global logger
 
-    # Build option parser
-    parser = OptionParser(version="%%prog %d.%d.%d"%version)
-    parser.add_option("-c", "--configfile", dest="configfile", default = "./server.ini",
-                      help="file to read configuration from")
-    parser.add_option("-s", "--sample_config",
-                      action="store_true", dest="gen_config", default=False,
-                      help="generate a sample config file & quit")
-    parser.add_option("-i", "--init",
-                      action="store_true", dest="initialize", default=False,
-                      help="initialize auxiliary tables in db & quit")
+    # Build argument parser
+    parser = argparse.ArgumentParser(description='Portable fdsnws-dataselect server')
+    parser.add_argument('configfile', action='store')
+    parser.add_argument("-s", "--sample_config",
+                        action="store_true", dest="genconfig", default=False,
+                        help="Generate a sample config file & quit")
+    parser.add_argument("-i", "--init",
+                        action="store_true", dest="initialize", default=False,
+                        help="Initialize auxiliary tables in database and quit")
 
-    # Read options
-    opts_args = parser.parse_args()
+    args = parser.parse_args()
 
-    # Read config file, if it exists where we were told
-    config = configparser.ConfigParser()
-
-    if opts_args[0].gen_config:
+    # Return sample configuration file
+    if args.genconfig:
         with open( os.path.join(os.path.dirname(pkg_path),'example','server.ini'), 'r' ) as f:
             print( f.read() )
         sys.exit(0)
 
-    if not os.path.exists(opts_args[0].configfile):
-        print("Could not read config file '%s'; exiting!" % opts_args[0].configfile)
+    if not os.path.exists(args.configfile):
+        print("Configuration file '%s' does not exist" % args.configfile)
         sys.exit(1)
-    config.read(opts_args[0].configfile)
+
+    # Read config file
+    config = configparser.ConfigParser()
+    config.read(args.configfile)
 
     # Set up logging
     if config.has_option('logging','path'):
@@ -982,7 +981,7 @@ def main():
     # Verify presence of required settings
     for s,o in req_list:
         if not config.has_option(s,o):
-            msg = "%s:%s not provided in '%s'; exiting!" % (s,o,opts_args[0].configfile)
+            msg = "%s:%s not provided in '%s'; exiting!" % (s,o,args.configfile)
             logger.critical(msg)
             print(msg)
             sys.exit(1)
@@ -995,7 +994,7 @@ def main():
         sys.exit(1)
 
     # Perform initialization of all_channel_summary table in DB, if requested
-    if opts_args[0].initialize:
+    if args.initialize:
         logger.info( "Initialization requested" )
         db_path = config.get('index_db','path')
         index_table = config.get('server','table') if config.has_option('server','table') else 'tsindex'
@@ -1035,7 +1034,7 @@ def main():
 
     # Start the server!
     try:
-        run(opts_args[0],config,shiplogdir)
+        run(args,config,shiplogdir)
     except (KeyboardInterrupt, SystemExit):
         logger.info("shutting down")
         print("\nshutting down")
