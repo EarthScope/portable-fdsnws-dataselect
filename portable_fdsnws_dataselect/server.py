@@ -919,13 +919,15 @@ def main():
     if config.has_option('logging','path'):
         log_path =  config.get('logging','path')
         shiplogdir = os.path.dirname( log_path )
+
     level_name = 'INFO'
     level_names = ['INFO','DEBUG','WARNING','ERROR','CRITICAL']
     if config.has_option('logging','level'):
         level_name = config.get('logging','level').upper()
         if level_name not in level_names:
-            logger.critical("logging:level not a valid logging level; exiting!" % level_name)
+            logger.critical("logging level '%s' not valid, exiting!" % level_name)
             sys.exit(1)
+
     log_config = {'version':1,
                 'formatters': {
                     'default': {'format': '%(asctime)s - %(levelname)s - %(message)s', 'datefmt': '%Y-%m-%d %H:%M:%S'},
@@ -945,6 +947,7 @@ def main():
             }
     logging.config.dictConfig( log_config )
     logger = logging.getLogger('default')
+
     if config.has_option('logging','shiplogdir'):
         shiplogdir =  config.get('logging','shiplogdir')
 
