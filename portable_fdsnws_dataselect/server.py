@@ -443,7 +443,6 @@ Service: fdsnws-dataselect  version %d.%d.%d
     def common_process( self, request_text=None ):
         '''Common processing for both GET and POST requests
         '''
-        global shiplogdir
 
         # Get the parameters of the request
         try:
@@ -491,13 +490,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
         # Get & return the actual data
         total_bytes = 0
-        client_ip = self.address_string()
-        try:
-            client_host = socket.gethostbyaddr(client_ip)
-        except:
-            client_host = client_ip
-        user_agent = self.headers.get( 'User-Agent', '?' )
-        rows_shipped = ["START CLIENT %s [%s] @ %s [%s]" % (client_host, client_ip, self.log_date_time_string(),user_agent)]
+        src_bytes = dict()
         start = time.time()
         try:
             for row in index_rows:
@@ -552,10 +545,17 @@ Service: fdsnws-dataselect  version %d.%d.%d
                         self.wfile.write( raw_data )
                         shipped_bytes += row[10]
 
+                # Accumulate shipped bytes
                 if shipped_bytes != 0:
                     total_bytes += shipped_bytes
-                    new_row = "%s_%s_%s_%s %d" % (row[0],row[1],row[2],row[3],shipped_bytes)
-                    rows_shipped.append( new_row )
+
+                    # Per-channel bytes for shipment log
+                    if self.server._shiplogdir:
+                        srcname = msri.get_srcname()
+                        if srcname in src_bytes:
+                            src_bytes[srcname] += shipped_bytes
+                        else:
+                            src_bytes[srcname] = shipped_bytes
 
         except Exception as err:
             self.return_error( 500, "Error accessing data: %s" % str(err) )
@@ -566,10 +566,31 @@ Service: fdsnws-dataselect  version %d.%d.%d
             self.return_error( int(req['nodata']), "No data matched slection" )
             return False
 
-        rows_shipped.append( "END CLIENT %s [%s] total_bytes: %d\n" % (client_host, client_ip, total_bytes) )
-        with open( os.path.join( self.server._shiplogdir, time.strftime( "shipment-%Y-%m-%dZ", time.gmtime( start ) ) ), "a" ) as f:
-            f.write( "\n".join( rows_shipped ) )
-        logger.info( "%d bytes transferred for request %s in %d seconds" % (total_bytes, self.path, time.time() - start) )
+        duration = time.time() - start
+
+        # Gather client information, the reverse DNS lookup could potentially take some time
+        client_ip = self.address_string()
+        try:
+            client_host = socket.gethostbyaddr(client_ip)[0]
+        except:
+            client_host = client_ip
+        user_agent = self.headers.get( 'User-Agent', '?' )
+
+        # Write shipment log
+        if self.server._shiplogdir:
+            shiplogfile = os.path.join( self.server._shiplogdir, time.strftime( "shipment-%Y-%m-%dZ", time.gmtime( start ) ) )
+
+            with open( shiplogfile, "a" ) as f:
+                rtime = UTCDateTime(int(start)).isoformat() + "Z"
+                f.write ( "START CLIENT %s [%s] @ %s [%s]\n" % (client_host, client_ip, rtime, user_agent) )
+
+                for srcname in sorted(src_bytes.keys()):
+                    f.write( "%s %s\n" % (srcname, src_bytes[srcname]) )
+
+                f.write( "END CLIENT %s [%s] total bytes: %d\n" % (client_host, client_ip, total_bytes) )
+
+        logger.info( "shipped %d bytes for request %s in %d seconds" % (total_bytes, self.path, duration) )
+
         return
 
     def read_request_file(self,request_text=None):
