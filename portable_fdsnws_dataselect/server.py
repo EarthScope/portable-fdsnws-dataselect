@@ -468,8 +468,8 @@ Service: fdsnws-dataselect  version %d.%d.%d
                 etime = UTCDateTime( row[20] )
                 trim_info = self.handle_trimming( stime, etime, row )
                 total_bytes += trim_info[1][1]-trim_info[0][1]
-                if total_bytes > self.server._output_cap:
-                    self.return_error( 413, "Result exceeds cap of %d bytes" % self.server._output_cap)
+                if self.server._request_limit > 0 and total_bytes > self.server._request_limit:
+                    self.return_error( 413, "Result exceeds limit of %d bytes" % self.server._request_limit)
                     return False
         except Exception as err:
             import traceback
@@ -838,6 +838,7 @@ def run(options,config,shiplogdir):
     httpd._db_path = db_path
     httpd._index_table = index_table
     httpd._shiplogdir = shiplogdir
+
     if config.has_option('server','username'):
         if config.has_option('server','password'):
             httpd.set_auth(config.get('server','username'), config.get('server','password'))
@@ -845,16 +846,18 @@ def run(options,config,shiplogdir):
             raise("Username specified w/o Password")
     elif config.has_option('server','password'):
         raise("Password specified w/o Username")
-    if config.has_option('server','output_cap'):
+
+    if config.has_option('server','request_limit'):
         try:
-            httpd._output_cap = int( config.get('server','output_cap')  )
-            if httpd._output_cap <= 0:
-                raise("Output Cap must be a positive integer")
+            httpd._request_limit = int( config.get('server','request_limit')  )
+            if httpd._request_limit < 0:
+                raise("Request limit must be >= 0")
         except:
-            logger.critical("Invalid output cap (%s); exiting!" % config.get('server','output_cap'))
+            logger.critical("Invalid request limit (%s); exiting!" % config.get('server','request_limit'))
             sys.exit(1)
     else:
-        httpd._output_cap =  1000000000
+        httpd._request_limit = 0
+
     if config.has_option('server','maxsectiondays'):
         try:
             httpd._maxsectiondays = int( config.get('server','maxsectiondays')  )
@@ -870,9 +873,9 @@ def run(options,config,shiplogdir):
     msg = 'running dataselect server @ %s:%d' % (server_interface, server_port)
     logger.info(msg)
     print(msg)
-    logger.info('output cap: %d bytes' % httpd._output_cap)
     logger.info('index db: %s' % httpd._db_path)
     logger.info('index table: %s' % httpd._index_table)
+    logger.info('request limit: %d bytes' % httpd._request_limit)
     logger.info('maxsectiondays: %s' % httpd._maxsectiondays)
     httpd.serve_forever()
 
