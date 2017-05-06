@@ -1036,11 +1036,12 @@ def main():
     # Start the server!
     try:
         run(opts_args[0],config,shiplogdir)
-    except:
-        #import traceback
-        #traceback.print_exc()
+    except (KeyboardInterrupt, SystemExit):
         logger.info("shutting down")
         print("\nshutting down")
+    except:
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()
