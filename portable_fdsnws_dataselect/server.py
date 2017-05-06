@@ -830,7 +830,10 @@ def run(options,config,shiplogdir):
             return self.key
 
     # Server settings
-    server_address = (config.get('server','ip'), int(config.get('server','port')))
+    server_interface = config.get('server','interface') if config.has_option('server','interface') else ''
+    server_port = int(config.get('server','port')) if config.has_option('server','port') else 80
+    server_address = (server_interface, server_port)
+
     httpd = ThreadedServer(server_address, HTTPServer_RequestHandler)
     httpd._db_path = db_path
     httpd._index_table = index_table
@@ -864,7 +867,7 @@ def run(options,config,shiplogdir):
     else:
         httpd._maxsectiondays = 10
 
-    msg = 'running dataselect server @ %s:%s' % (config.get('server','ip'), config.get('server','port'))
+    msg = 'running dataselect server @ %s:%d' % (server_interface, server_port)
     logger.info(msg)
     print(msg)
     logger.info('output cap: %d bytes' % httpd._output_cap)
@@ -942,13 +945,10 @@ def main():
     if config.has_option('logging','shiplogdir'):
         shiplogdir =  config.get('logging','shiplogdir')
 
-    # Build list of required definitions form config file
+    # List of required settings from config file
     req_list = [('index_db','path')]
-    if not opts_args[0].initialize:
-        req_list.append( ('server','ip') )
-        req_list.append( ('server','port') )
 
-    # Verify presence of required definitions
+    # Verify presence of required settings
     for s,o in req_list:
         if not config.has_option(s,o):
             msg = "%s:%s not provided in '%s'; exiting!" % (s,o,opts_args[0].configfile)
@@ -992,19 +992,22 @@ def main():
         sys.exit(0)
 
     # Validate server port
-    try:
-        if int(config.get('server','port')) <= 0:
-            raise
-    except:
-        logger.critical("server:port must be a positive integer; exiting!")
-        sys.exit(1)
+    if config.has_option('server','port'):
+        try:
+            if int(config.get('server','port')) <= 0:
+                raise
+        except:
+            msg = "server:port must be a positive integer; exiting!"
+            logger.critical(msg)
+            print(msg)
+            sys.exit(1)
 
     # Start the server!
     try:
         run(opts_args[0],config,shiplogdir)
     except:
-#         import traceback
-#         traceback.print_exc()
+        #import traceback
+        #traceback.print_exc()
         logger.info("shutting down")
         print("\nshutting down")
 
