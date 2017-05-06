@@ -401,7 +401,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
 #                         return
 #                     v = v.upper()
                 elif k == 'format':
-                    if v.lower() not in ('miniseed','text','xml'):
+                    if v.lower() not in ('miniseed'):
                         self.return_error( 400, "Unsupported format: '%s'" % v )
                         return
                 sql_qry[k] = [v]
