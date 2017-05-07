@@ -459,22 +459,23 @@ Service: fdsnws-dataselect  version %d.%d.%d
             return
 
         # Pre-scan the index rows, to see if the request is small enough to satisfy
-        traces = []
-        total_bytes = 0
-        try:
-            for row in index_rows:
-                stime = UTCDateTime( row[19] )
-                etime = UTCDateTime( row[20] )
-                trim_info = self.handle_trimming( stime, etime, row )
-                total_bytes += trim_info[1][1]-trim_info[0][1]
-                if self.server._request_limit > 0 and total_bytes > self.server._request_limit:
-                    self.return_error( 413, "Result exceeds limit of %d bytes" % self.server._request_limit)
-                    return False
-        except Exception as err:
-            import traceback
-            traceback.print_exc()
-            self.return_error( 500, "Error accessing data index: %s" % str(err) )
-            return False
+        # Accumulated estimate of output bytes will be equal to or higher than actual output
+        if self.server.params['request_limit'] > 0:
+            total_bytes = 0
+            try:
+                for row in index_rows:
+                    stime = UTCDateTime( row[19] )
+                    etime = UTCDateTime( row[20] )
+                    trim_info = self.handle_trimming( stime, etime, row )
+                    total_bytes += trim_info[1][1]-trim_info[0][1]
+                    if total_bytes > self.server.params['request_limit']:
+                        self.return_error( 413, "Result exceeds limit of %d bytes" % self.server.params['request_limit'])
+                        return False
+            except Exception as err:
+                import traceback
+                traceback.print_exc()
+                self.return_error( 500, "Error accessing data index: %s" % str(err) )
+                return False
 
         # Error if request matches no data
         if total_bytes==0:
@@ -488,6 +489,12 @@ Service: fdsnws-dataselect  version %d.%d.%d
         self.send_header('Content-type','application/vnd.fdsn.mseed')
         self.end_headers()
 
+        # Precompile the match regex for data path replacement
+        if self.server.params['datapath_replace']:
+            dp_replace = re.compile(self.server.params['datapath_replace'][0])
+        else:
+            dp_replace = None
+
         # Get & return the actual data
         total_bytes = 0
         src_bytes = dict()
@@ -500,10 +507,16 @@ Service: fdsnws-dataselect  version %d.%d.%d
                 eepoch = etime.timestamp
                 trim_info = self.handle_trimming( stime, etime, row )
                 shipped_bytes = 0;
+                filename = row[8]
+
+                # Data file path replacement
+                if dp_replace:
+                    filename = dp_replace.sub(self.server.params['datapath_replace'][1],filename)
 
                 # Iterate through records in section if only part of the section is needed
                 if trim_info[0][2] or trim_info[1][2]:
-                    for msri in MSR_iterator( filename=row[8], startoffset=trim_info[0][1], dataflag=False ):
+
+                    for msri in MSR_iterator( filename=filename, startoffset=trim_info[0][1], dataflag=False ):
                         offset = msri.get_offset()
 
                         # Done if we are beyond end offset
@@ -539,7 +552,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
                 # Otherwise, return the entire section
                 else:
-                    with open( row[8], "rb" ) as f:
+                    with open( filename, "rb" ) as f:
                         f.seek( trim_info[0][1] )
                         raw_data = f.read( row[10] )
                         self.wfile.write( raw_data )
@@ -550,7 +563,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
                     total_bytes += shipped_bytes
 
                     # Per-channel bytes for shipment log
-                    if self.server._shiplogdir:
+                    if self.server.params['shiplogdir']:
                         srcname = msri.get_srcname()
                         if srcname in src_bytes:
                             src_bytes[srcname] += shipped_bytes
@@ -577,8 +590,9 @@ Service: fdsnws-dataselect  version %d.%d.%d
         user_agent = self.headers.get( 'User-Agent', '?' )
 
         # Write shipment log
-        if self.server._shiplogdir:
-            shiplogfile = os.path.join( self.server._shiplogdir, time.strftime( "shipment-%Y-%m-%dZ", time.gmtime( start ) ) )
+        if self.server.params['shiplogdir']:
+            shiplogfile = os.path.join( self.server.params['shiplogdir'],
+                                        time.strftime( "shipment-%Y-%m-%dZ", time.gmtime( start ) ) )
 
             with open( shiplogfile, "a" ) as f:
                 rtime = UTCDateTime(int(start)).isoformat() + "Z"
@@ -698,7 +712,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         request_table = "request_%s" % my_uuid
 
         try:
-            conn = sqlite3.connect(self.server._dbfile, 10.0)
+            conn = sqlite3.connect(self.server.params['dbfile'], 10.0)
         except Exception as err:
             raise ValueError(str(err))
 
@@ -769,9 +783,9 @@ Service: fdsnws-dataselect  version %d.%d.%d
                         "  AND ts.starttime >= datetime(r.starttime,'-{3} days') "
                         "  AND ts.endtime >= r.starttime "
                         "ORDER BY ts.network,ts.station,ts.location,ts.channel"
-                        .format(self.server._index_table,
+                        .format(self.server.params['index_table'],
                                 request_table, "GLOB" if wildcards else "=",
-                                self.server._maxsectiondays))
+                                self.server.params['maxsectiondays']))
             cur.execute( sql )
 
         except Exception as err:
@@ -850,26 +864,20 @@ def run_server(params):
         def get_auth_key(self):
             return self.key
 
-    httpd = ThreadedServer((params['interface'], params['port']), HTTPServer_RequestHandler)
-    httpd._dbfile = params['dbfile']
-    httpd._index_table = params['index_table']
-    httpd._request_limit = params['request_limit']
-    httpd._shiplogdir = params['shiplogdir']
-    httpd._request_limit = params['request_limit']
-    httpd._maxsectiondays = params['maxsectiondays']
+    server = ThreadedServer((params['interface'], params['port']), HTTPServer_RequestHandler)
+    server.params = params
 
     if 'username' in params and 'password' in params:
-        httpd.set_auth(params['username'], params['password'])
+        server.set_auth(params['username'], params['password'])
 
     msg = 'running dataselect server @ %s:%d' % (params['interface'], params['port'])
     logger.info(msg)
     print(msg)
-    logger.info('index db: %s' % httpd._dbfile)
-    logger.info('index table: %s' % httpd._index_table)
-    logger.info('request limit: %d bytes' % httpd._request_limit)
-    logger.info('maxsectiondays: %s' % httpd._maxsectiondays)
 
-    httpd.serve_forever()
+    for p in sorted(server.params.keys()):
+        logger.info('CONFIG %s: %s' % (p, str(server.params[p])))
+
+    server.serve_forever()
 
 def main():
     '''
@@ -970,10 +978,20 @@ def main():
         params['index_table'] = 'tsindex'
 
     # Data file path substitution
-    if config.has_option ('index_db','datafile_replace'):
-        params['datafile_replace'] = config.get('index_db','datafile_replace')
+    if config.has_option ('index_db','datapath_replace'):
+        subop = config.get('index_db','datapath_replace').split(",")
+
+        if len(subop) != 2:
+            msg = "datapath substition must be two strings separated by a comma not '%s', exiting!" % config.get('index_db','datapath_replace')
+            logger.critical(msg)
+            print(msg)
+            sys.exit(1)
+
+        # Store replacement while stripping surrounding spaces and double quote
+        params['datapath_replace'] = (subop[0].strip(' "'),subop[1].strip(' "'))
+
     else:
-        params['datafile_replace'] = False
+        params['datapath_replace'] = False
 
     # Server interface/address
     if config.has_option ('server','interface'):
