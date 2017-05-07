@@ -698,7 +698,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         request_table = "request_%s" % my_uuid
 
         try:
-            conn = sqlite3.connect(self.server._db_path, 10.0)
+            conn = sqlite3.connect(self.server._dbfile, 10.0)
         except Exception as err:
             raise ValueError(str(err))
 
@@ -769,8 +769,11 @@ Service: fdsnws-dataselect  version %d.%d.%d
                         "  AND ts.starttime >= datetime(r.starttime,'-{3} days') "
                         "  AND ts.endtime >= r.starttime "
                         "ORDER BY ts.network,ts.station,ts.location,ts.channel"
-                        .format(self.server._index_table, request_table, "GLOB" if wildcards else "=", self.server._maxsectiondays))
+                        .format(self.server._index_table,
+                                request_table, "GLOB" if wildcards else "=",
+                                self.server._maxsectiondays))
             cur.execute( sql )
+
         except Exception as err:
             import traceback
             traceback.print_exc()
@@ -830,13 +833,10 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
         return
 
-def run(options,config,shiplogdir):
+def run_server(params):
     '''Run the server w/ the provided options and config
     '''
     logger.info('starting server...')
-    db_path = config.get('index_db','path')
-    index_table = config.get('index_db','table') if config.has_option('server','table') else 'tsindex'
-
 
     class ThreadedServer(ThreadPoolMixIn, HTTPServer):
         def __init__(self, address, handlerClass=HTTPServer_RequestHandler):
@@ -850,54 +850,25 @@ def run(options,config,shiplogdir):
         def get_auth_key(self):
             return self.key
 
-    # Server settings
-    server_interface = config.get('server','interface') if config.has_option('server','interface') else ''
-    server_port = int(config.get('server','port')) if config.has_option('server','port') else 80
-    server_address = (server_interface, server_port)
+    httpd = ThreadedServer((params['interface'], params['port']), HTTPServer_RequestHandler)
+    httpd._dbfile = params['dbfile']
+    httpd._index_table = params['index_table']
+    httpd._request_limit = params['request_limit']
+    httpd._shiplogdir = params['shiplogdir']
+    httpd._request_limit = params['request_limit']
+    httpd._maxsectiondays = params['maxsectiondays']
 
-    httpd = ThreadedServer(server_address, HTTPServer_RequestHandler)
-    httpd._db_path = db_path
-    httpd._index_table = index_table
-    httpd._shiplogdir = shiplogdir
+    if 'username' in params and 'password' in params:
+        httpd.set_auth(params['username'], params['password'])
 
-    if config.has_option('server','username'):
-        if config.has_option('server','password'):
-            httpd.set_auth(config.get('server','username'), config.get('server','password'))
-        else:
-            raise("Username specified w/o Password")
-    elif config.has_option('server','password'):
-        raise("Password specified w/o Username")
-
-    if config.has_option('server','request_limit'):
-        try:
-            httpd._request_limit = int( config.get('server','request_limit')  )
-            if httpd._request_limit < 0:
-                raise("Request limit must be >= 0")
-        except:
-            logger.critical("Invalid request limit (%s); exiting!" % config.get('server','request_limit'))
-            sys.exit(1)
-    else:
-        httpd._request_limit = 0
-
-    if config.has_option('server','maxsectiondays'):
-        try:
-            httpd._maxsectiondays = int( config.get('server','maxsectiondays')  )
-            if httpd._maxsectiondays <= 0:
-                logger.critical("Max Section Days must be positive integer, not %d; exiting!" % config.get('server',_maxsectiondays))
-                sys.exit(1)
-        except:
-            logger.critical("Invalid Max Section Days (%s); exiting!" % config.get('server','maxsectiondays'))
-            sys.exit(1)
-    else:
-        httpd._maxsectiondays = 10
-
-    msg = 'running dataselect server @ %s:%d' % (server_interface, server_port)
+    msg = 'running dataselect server @ %s:%d' % (params['interface'], params['port'])
     logger.info(msg)
     print(msg)
-    logger.info('index db: %s' % httpd._db_path)
+    logger.info('index db: %s' % httpd._dbfile)
     logger.info('index table: %s' % httpd._index_table)
     logger.info('request limit: %d bytes' % httpd._request_limit)
     logger.info('maxsectiondays: %s' % httpd._maxsectiondays)
+
     httpd.serve_forever()
 
 def main():
@@ -925,11 +896,11 @@ def main():
             print( f.read() )
         sys.exit(0)
 
+    # Check for and read config file
     if not os.path.exists(args.configfile):
         print("Configuration file '%s' does not exist" % args.configfile)
         sys.exit(1)
 
-    # Read config file
     config = configparser.ConfigParser()
     config.read(args.configfile)
 
@@ -949,7 +920,8 @@ def main():
 
         log_config = {'version':1,
                       'formatters': {
-                          'default': {'format': '%(asctime)s - %(levelname)s - %(message)s', 'datefmt': '%Y-%m-%d %H:%M:%S'},
+                          'default': {'format': '%(asctime)s - %(levelname)s - %(message)s',
+                                      'datefmt': '%Y-%m-%d %H:%M:%S'},
                       },
                       'handlers': {
                           'file': {
@@ -973,38 +945,138 @@ def main():
 
     logger = logging.getLogger('default')
 
-    shiplogdir = config.get('logging','shiplogdir') if config.has_option('logging','shiplogdir') else None
+    # Validate, set defaults and map config file options to params
+    params = dict()
 
-    # List of required settings from config file
-    req_list = [('index_db','path')]
+    # Database file, required
+    if config.has_option ('index_db','path'):
+        params['dbfile'] = config.get('index_db','path')
 
-    # Verify presence of required settings
-    for s,o in req_list:
-        if not config.has_option(s,o):
-            msg = "%s:%s not provided in '%s'; exiting!" % (s,o,args.configfile)
+        if not os.path.isfile(params['dbfile']):
+            msg = "Cannot find database file at '%s', exiting!" % params['dbfile']
             logger.critical(msg)
             print(msg)
             sys.exit(1)
-
-    # Check for existence of db file
-    if not os.path.exists( config.get('index_db','path') ):
-        msg = "No file at %s; exiting!" % config.get('index_db','path')
+    else:
+        msg = "Required database file (index_db:path) is not specified"
         logger.critical(msg)
         print(msg)
         sys.exit(1)
 
-    # Perform initialization of all_channel_summary table in DB, if requested
+    # Database table
+    if config.has_option ('index_db','table'):
+        params['index_table'] = config.get('index_db','table')
+    else:
+        params['index_table'] = 'tsindex'
+
+    # Data file path substitution
+    if config.has_option ('index_db','datafile_replace'):
+        params['datafile_replace'] = config.get('index_db','datafile_replace')
+    else:
+        params['datafile_replace'] = False
+
+    # Server interface/address
+    if config.has_option ('server','interface'):
+        params['interface'] = config.get('server','interface')
+    else:
+        params['interface'] = ''
+
+    # Server port
+    if config.has_option ('server','port'):
+        try:
+            params['port'] = int(config.get('server','port'))
+
+            if params['port'] <= 0:
+                msg = "Config server:port must be a positive integer, not %d" % params['port']
+                logger.critical(msg)
+                print(msg)
+                sys.exit(1)
+
+        except ValueError:
+            msg = "Config server:port (%s) is not an integer" % config.get('server','port')
+            logger.critical(msg)
+            print(msg)
+            sys.exit(1)
+    else:
+        params['port'] = 80
+
+    # Request limit in bytes
+    if config.has_option ('server','request_limit'):
+        try:
+            params['request_limit'] = int(config.get('server','request_limit'))
+
+            if params['request_limit'] < 0:
+                msg = "Config server:request_limit must be >= 0, not %d" % params['request_limit']
+                logger.critical(msg)
+                print(msg)
+                sys.exit(1)
+
+        except ValueError:
+            msg = "Config server:request_limit (%s) is not an integer" % config.get('server','request_limit')
+            logger.critical(msg)
+            print(msg)
+            sys.exit(1)
+    else:
+        params['request_limit'] = 0
+
+    # User name and password
+    if config.has_option ('server','username'):
+        params['username'] = config.get('server','username')
+    else:
+        params['username'] = None
+    if config.has_option ('server','password'):
+        params['password'] = config.get('server','password')
+    else:
+        params['password'] = None
+
+    if (params['username'] and not params['password']) or (params['password'] and not params['username']):
+        msg = "Username and password must be specified together, exiting"
+        logger.critical(msg)
+        print(msg)
+        sys.exit(1)
+
+    # Max section days
+    if config.has_option ('server','maxsectiondays'):
+        try:
+            params['maxsectiondays'] = int(config.get('server','maxsectiondays'))
+
+            if params['maxsectiondays'] <= 0:
+                msg = "Config server:maxsectiondays must be > 0, not %d" % params['maxsectiondays']
+                logger.critical(msg)
+                print(msg)
+                sys.exit(1)
+
+        except ValueError:
+            msg = "Config server:maxsectiondays (%s) is not an integer" % config.get('server','maxsectiondays')
+            logger.critical(msg)
+            print(msg)
+            sys.exit(1)
+    else:
+        params['maxsectiondays'] = 10
+
+    # Shipment logging directory
+    if config.has_option ('logging','shiplogdir'):
+        params['shiplogdir'] = config.get('logging','shiplogdir')
+
+        if not os.path.isdir(params['shiplogdir']):
+            msg = "Cannot find shipment logging directory at '%s', exiting!" % params['shiplogdir']
+            logger.critical(msg)
+            print(msg)
+            sys.exit(1)
+    else:
+        params['shiplogdir'] = None
+
+    # Perform initialization of all_channel_summary table in DB if requested
     if args.initialize:
         logger.info( "Initialization requested" )
-        db_path = config.get('index_db','path')
-        index_table = config.get('server','table') if config.has_option('server','table') else 'tsindex'
         print("initializing")
 
         try:
-            conn = sqlite3.connect( db_path, 10.0 )
+            conn = sqlite3.connect( params['dbfile'], 10.0 )
         except Exception as err:
             logger.error( "Could not connect to DB for initialization: %s" % str(err) )
             return
+
         try:
             c = conn.cursor()
             c.execute( "DROP TABLE IF EXISTS all_channel_summary;" )
@@ -1012,32 +1084,24 @@ def main():
                        "  SELECT network,station,location,channel,"
                        "  min(starttime) AS earliest, max(endtime) AS latest, datetime('now') as updt"
                        "  FROM {0}"
-                       "  GROUP BY 1,2,3,4;".format(index_table) )
+                       "  GROUP BY 1,2,3,4;".format(params['index_table']) )
             conn.commit()
             conn.close()
         except Exception as err:
             logger.error( "Could not run initialization query: %s" % str(err) )
             return
+
         logger.info("Initialization completed successfully");
         sys.exit(0)
 
-    # Validate server port
-    if config.has_option('server','port'):
-        try:
-            if int(config.get('server','port')) <= 0:
-                raise
-        except:
-            msg = "server:port must be a positive integer; exiting!"
-            logger.critical(msg)
-            print(msg)
-            sys.exit(1)
-
     # Start the server!
     try:
-        run(args,config,shiplogdir)
+        run_server(params)
+
     except (KeyboardInterrupt, SystemExit):
         logger.info("shutting down")
         print("\nshutting down")
+
     except:
         import traceback
         traceback.print_exc()
