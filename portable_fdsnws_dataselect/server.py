@@ -444,6 +444,9 @@ Service: fdsnws-dataselect  version %d.%d.%d
         '''Common processing for both GET and POST requests
         '''
 
+        request_time = time.time()
+        request_time_str = UTCDateTime(int(request_time)).isoformat() + "Z"
+
         # Get the parameters of the request
         try:
             prefix, request = self.read_request_file( request_text )
@@ -482,11 +485,11 @@ Service: fdsnws-dataselect  version %d.%d.%d
             self.return_error( int(req['nodata']), "No data matched slection" )
             return False
 
-        # Send response status code
+        # Send success response status code and headers
         self.send_response(200)
-
-        # Send headers
-        self.send_header('Content-type','application/vnd.fdsn.mseed')
+        self.send_header('Content-Type','application/vnd.fdsn.mseed')
+        self.send_header('Content-Disposition',
+                         'attachment; filename=fdsnws-dataselect_%s.mseed' % request_time_str)
         self.end_headers()
 
         # Precompile the match regex for data path replacement
@@ -498,7 +501,6 @@ Service: fdsnws-dataselect  version %d.%d.%d
         # Get & return the actual data
         total_bytes = 0
         src_bytes = dict()
-        start = time.time()
         try:
             for row in index_rows:
                 stime = UTCDateTime( row[19] )
@@ -579,7 +581,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
             self.return_error( int(req['nodata']), "No data matched slection" )
             return False
 
-        duration = time.time() - start
+        duration = time.time() - request_time
 
         # Gather client information, the reverse DNS lookup could potentially take some time
         client_ip = self.address_string()
@@ -592,11 +594,10 @@ Service: fdsnws-dataselect  version %d.%d.%d
         # Write shipment log
         if self.server.params['shiplogdir']:
             shiplogfile = os.path.join( self.server.params['shiplogdir'],
-                                        time.strftime( "shipment-%Y-%m-%dZ", time.gmtime( start ) ) )
+                                        time.strftime( "shipment-%Y-%m-%dZ", time.gmtime( request_time ) ) )
 
             with open( shiplogfile, "a" ) as f:
-                rtime = UTCDateTime(int(start)).isoformat() + "Z"
-                f.write ( "START CLIENT %s [%s] @ %s [%s]\n" % (client_host, client_ip, rtime, user_agent) )
+                f.write ( "START CLIENT %s [%s] @ %s [%s]\n" % (client_host, client_ip, request_time_str, user_agent) )
 
                 for srcname in sorted(src_bytes.keys()):
                     f.write( "%s %s\n" % (srcname, src_bytes[srcname]) )
