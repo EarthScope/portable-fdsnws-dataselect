@@ -463,8 +463,8 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
         # Pre-scan the index rows, to see if the request is small enough to satisfy
         # Accumulated estimate of output bytes will be equal to or higher than actual output
+        total_bytes = 0
         if self.server.params['request_limit'] > 0:
-            total_bytes = 0
             try:
                 for row in index_rows:
                     stime = UTCDateTime( row[19] )
@@ -688,7 +688,6 @@ Service: fdsnws-dataselect  version %d.%d.%d
                 raise ValueError("Unrecognized selection line ({0:d}): '{1:s}'".format(linenumber, line))
 
             linenumber = linenumber + 1
-
 
         if len(request) == 0:
             raise ValueError( "No 'N/S/L/C start end' lines present" )
