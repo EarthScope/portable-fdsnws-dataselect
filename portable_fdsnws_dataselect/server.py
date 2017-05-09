@@ -31,8 +31,8 @@ class ThreadPoolMixIn(ThreadingMixIn):
         # set up the threadpool
         self.requests = Queue(self.numThreads)
 
-        for x in range(self.numThreads):
-            t = threading.Thread(target = self.process_request_thread)
+        for _ in range(self.numThreads):
+            t = threading.Thread(target=self.process_request_thread)
             t.setDaemon(1)
             t.start()
 
@@ -42,14 +42,12 @@ class ThreadPoolMixIn(ThreadingMixIn):
 
         self.server_close()
 
-
     def process_request_thread(self):
         '''
         obtain request from queue instead of directly from server socket
         '''
         while True:
             ThreadingMixIn.process_request_thread(self, *self.requests.get())
-
 
     def handle_request(self):
         '''
@@ -117,8 +115,8 @@ def main():
 
     # Return sample configuration file
     if args.genconfig:
-        with open( os.path.join(os.path.dirname(pkg_path),'example','server.ini'), 'r' ) as f:
-            print( f.read() )
+        with open(os.path.join(os.path.dirname(pkg_path), 'example', 'server.ini'), 'r') as f:
+            print(f.read())
         sys.exit(0)
 
     # Check for and read config file
@@ -130,39 +128,40 @@ def main():
     config.read(args.configfile)
 
     # Set up logging
-    if config.has_option('logging','path'):
-        log_path = config.get('logging','path')
+    if config.has_option('logging', 'path'):
+        log_path = config.get('logging', 'path')
 
         level_name = 'INFO'
-        level_names = ['DEBUG','INFO','WARNING','ERROR','CRITICAL']
+        level_names = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
 
-        if config.has_option('logging','level'):
-            level_name = config.get('logging','level').upper()
+        if config.has_option('logging', 'level'):
+            level_name = config.get('logging', 'level').upper()
 
         if level_name not in level_names:
             logger.critical("logging level '%s' not valid, exiting!" % level_name)
             sys.exit(1)
 
-        log_config = {'version':1,
-                      'formatters': {
-                          'default': {'format': '%(asctime)s - %(levelname)s - %(message)s',
-                                      'datefmt': '%Y-%m-%d %H:%M:%S'},
-                      },
-                      'handlers': {
-                          'file': {
-                              'class':'logging.handlers.TimedRotatingFileHandler',
-                              'level':level_name,
-                              'filename':log_path,
-                              'formatter':'default',
-                              'when':'d',
-                              'interval':1
-                          }
-                      },
-                      'loggers': {
-                          'default': { 'level':level_name, 'handlers': ['file'] }
-                      }
+        log_config = {
+            'version': 1,
+            'formatters': {
+                'default': {'format': '%(asctime)s - %(levelname)s - %(message)s',
+                            'datefmt': '%Y-%m-%d %H:%M:%S'},
+            },
+            'handlers': {
+                'file': {
+                    'class': 'logging.handlers.TimedRotatingFileHandler',
+                    'level': level_name,
+                    'filename': log_path,
+                    'formatter': 'default',
+                    'when': 'd',
+                    'interval': 1
+                }
+            },
+            'loggers': {
+                'default': {'level': level_name, 'handlers': ['file']}
+            }
         }
-        logging.config.dictConfig( log_config )
+        logging.config.dictConfig(log_config)
 
     else:
         # If no log file defined set log level for no output
@@ -174,8 +173,8 @@ def main():
     params = dict()
 
     # Database file, required
-    if config.has_option ('index_db','path'):
-        params['dbfile'] = config.get('index_db','path')
+    if config.has_option('index_db', 'path'):
+        params['dbfile'] = config.get('index_db', 'path')
 
         if not os.path.isfile(params['dbfile']):
             msg = "Cannot find database file at '%s', exiting!" % params['dbfile']
@@ -189,37 +188,37 @@ def main():
         sys.exit(1)
 
     # Database table
-    if config.has_option ('index_db','table'):
-        params['index_table'] = config.get('index_db','table')
+    if config.has_option('index_db', 'table'):
+        params['index_table'] = config.get('index_db', 'table')
     else:
         params['index_table'] = 'tsindex'
 
     # Data file path substitution
-    if config.has_option ('index_db','datapath_replace'):
-        subop = config.get('index_db','datapath_replace').split(",")
+    if config.has_option('index_db', 'datapath_replace'):
+        subop = config.get('index_db', 'datapath_replace').split(",")
 
         if len(subop) != 2:
-            msg = "datapath substition must be two strings separated by a comma not '%s', exiting!" % config.get('index_db','datapath_replace')
+            msg = "datapath substition must be two strings separated by a comma not '%s', exiting!" % config.get('index_db', 'datapath_replace')
             logger.critical(msg)
             print(msg)
             sys.exit(1)
 
         # Store replacement while stripping surrounding spaces and double quote
-        params['datapath_replace'] = (subop[0].strip(' "'),subop[1].strip(' "'))
+        params['datapath_replace'] = (subop[0].strip(' "'), subop[1].strip(' "'))
 
     else:
         params['datapath_replace'] = False
 
     # Server interface/address
-    if config.has_option ('server','interface'):
-        params['interface'] = config.get('server','interface')
+    if config.has_option('server', 'interface'):
+        params['interface'] = config.get('server', 'interface')
     else:
         params['interface'] = ''
 
     # Server port
-    if config.has_option ('server','port'):
+    if config.has_option('server', 'port'):
         try:
-            params['port'] = int(config.get('server','port'))
+            params['port'] = int(config.get('server', 'port'))
 
             if params['port'] <= 0:
                 msg = "Config server:port must be a positive integer, not %d" % params['port']
@@ -228,7 +227,7 @@ def main():
                 sys.exit(1)
 
         except ValueError:
-            msg = "Config server:port (%s) is not an integer" % config.get('server','port')
+            msg = "Config server:port (%s) is not an integer" % config.get('server', 'port')
             logger.critical(msg)
             print(msg)
             sys.exit(1)
@@ -236,9 +235,9 @@ def main():
         params['port'] = 80
 
     # Request limit in bytes
-    if config.has_option ('server','request_limit'):
+    if config.has_option('server', 'request_limit'):
         try:
-            params['request_limit'] = int(config.get('server','request_limit'))
+            params['request_limit'] = int(config.get('server', 'request_limit'))
 
             if params['request_limit'] < 0:
                 msg = "Config server:request_limit must be >= 0, not %d" % params['request_limit']
@@ -247,7 +246,7 @@ def main():
                 sys.exit(1)
 
         except ValueError:
-            msg = "Config server:request_limit (%s) is not an integer" % config.get('server','request_limit')
+            msg = "Config server:request_limit (%s) is not an integer" % config.get('server', 'request_limit')
             logger.critical(msg)
             print(msg)
             sys.exit(1)
@@ -255,12 +254,12 @@ def main():
         params['request_limit'] = 0
 
     # User name and password
-    if config.has_option ('server','username'):
-        params['username'] = config.get('server','username')
+    if config.has_option('server', 'username'):
+        params['username'] = config.get('server', 'username')
     else:
         params['username'] = None
-    if config.has_option ('server','password'):
-        params['password'] = config.get('server','password')
+    if config.has_option('server', 'password'):
+        params['password'] = config.get('server', 'password')
     else:
         params['password'] = None
 
@@ -271,9 +270,9 @@ def main():
         sys.exit(1)
 
     # Max section days
-    if config.has_option ('server','maxsectiondays'):
+    if config.has_option('server', 'maxsectiondays'):
         try:
-            params['maxsectiondays'] = int(config.get('server','maxsectiondays'))
+            params['maxsectiondays'] = int(config.get('server', 'maxsectiondays'))
 
             if params['maxsectiondays'] <= 0:
                 msg = "Config server:maxsectiondays must be > 0, not %d" % params['maxsectiondays']
@@ -282,7 +281,7 @@ def main():
                 sys.exit(1)
 
         except ValueError:
-            msg = "Config server:maxsectiondays (%s) is not an integer" % config.get('server','maxsectiondays')
+            msg = "Config server:maxsectiondays (%s) is not an integer" % config.get('server', 'maxsectiondays')
             logger.critical(msg)
             print(msg)
             sys.exit(1)
@@ -290,8 +289,8 @@ def main():
         params['maxsectiondays'] = 10
 
     # Shipment logging directory
-    if config.has_option ('logging','shiplogdir'):
-        params['shiplogdir'] = config.get('logging','shiplogdir')
+    if config.has_option('logging', 'shiplogdir'):
+        params['shiplogdir'] = config.get('logging', 'shiplogdir')
 
         if not os.path.isdir(params['shiplogdir']):
             msg = "Cannot find shipment logging directory at '%s', exiting!" % params['shiplogdir']
@@ -303,30 +302,30 @@ def main():
 
     # Perform initialization of all_channel_summary table in DB if requested
     if args.initialize:
-        logger.info( "Initialization requested" )
+        logger.info("Initialization requested")
         print("initializing")
 
         try:
-            conn = sqlite3.connect( params['dbfile'], 10.0 )
+            conn = sqlite3.connect(params['dbfile'], 10.0)
         except Exception as err:
-            logger.error( "Could not connect to DB for initialization: %s" % str(err) )
+            logger.error("Could not connect to DB for initialization: %s" % str(err))
             return
 
         try:
             c = conn.cursor()
-            c.execute( "DROP TABLE IF EXISTS all_channel_summary;" )
-            c.execute( "CREATE TABLE all_channel_summary AS"
-                       "  SELECT network,station,location,channel,"
-                       "  min(starttime) AS earliest, max(endtime) AS latest, datetime('now') as updt"
-                       "  FROM {0}"
-                       "  GROUP BY 1,2,3,4;".format(params['index_table']) )
+            c.execute("DROP TABLE IF EXISTS all_channel_summary;")
+            c.execute("CREATE TABLE all_channel_summary AS"
+                      "  SELECT network,station,location,channel,"
+                      "  min(starttime) AS earliest, max(endtime) AS latest, datetime('now') as updt"
+                      "  FROM {0}"
+                      "  GROUP BY 1,2,3,4;".format(params['index_table']))
             conn.commit()
             conn.close()
         except Exception as err:
-            logger.error( "Could not run initialization query: %s" % str(err) )
+            logger.error("Could not run initialization query: %s" % str(err))
             return
 
-        logger.info("Initialization completed successfully");
+        logger.info("Initialization completed successfully")
         sys.exit(0)
 
     # Start the server!
@@ -337,7 +336,7 @@ def main():
         logger.info("shutting down")
         print("\nshutting down")
 
-    except:
+    except Exception:
         import traceback
         traceback.print_exc()
 

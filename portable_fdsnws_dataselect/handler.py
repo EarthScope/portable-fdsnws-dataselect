@@ -43,16 +43,6 @@ http_msgs = {
     503: "Service temporarily unavailable"
 }
 
-def normalize_datetime(timestring):
-    '''Normalize time string to strict YYYY-MM-DDThh:mm:ss.ffffff format
-    '''
-
-    # Split Year,Month,Day Hour,Min,Second,Fractional seconds
-    timepieces = re.split("[-.:T]+", timestring)
-    timepieces = [int(i) for i in timepieces]
-
-    # Rebuild into target format
-    return datetime.datetime(*timepieces).strftime("%Y-%m-%dT%H:%M:%S.%f")
 
 # HTTPRequestHandler class
 class HTTPServer_RequestHandler(BaseHTTPRequestHandler):
@@ -70,7 +60,7 @@ class HTTPServer_RequestHandler(BaseHTTPRequestHandler):
         self.send_header('Content-type', 'text/html')
         self.end_headers()
 
-    def return_error( self, code, err_msg ):
+    def return_error(self, code, err_msg):
         '''An error has occurred (code # code, details in err_msg)
 
         Log it, return message page
@@ -89,21 +79,21 @@ Request Submitted:
 
 Service version:
 Service: fdsnws-dataselect  version %d.%d.%d
-''' % (code, http_msgs[code], err_msg, '/fdsnws/dataselect/%d/'%version[0], self.format_host(), datetime.datetime.now().isoformat(), version[0], version[1], version[2])
+''' % (code, http_msgs[code], err_msg, '/fdsnws/dataselect/%d/' % version[0], self.format_host(), datetime.datetime.now().isoformat(), version[0], version[1], version[2])
         self.send_response(code)
         self.send_header('Content-type', 'text/plain')
         self.send_header('Connection', 'close')
         self.end_headers()
         self.wfile.write(bytes(msg, "utf8"))
-        logger.error( "Code:%d Error:%s Request:%s" % (code, err_msg, self.path) )
+        logger.error("Code:%d Error:%s Request:%s" % (code, err_msg, self.path))
 
-    def format_host( self, query='' ):
+    def format_host(self, query=''):
         '''Return the fuill URL for this host, w/ query (if provided)
         '''
         path = urlparse(self.path).path
         return "http://%s:%d%s%s" % (self.server.server_name, self.server.server_port, path, query)
 
-    def handle_trimming( self, stime, etime, row ):
+    def handle_trimming(self, stime, etime, row):
         '''Get the time & byte-offsets for the data in time range (stime, etime)
 
         This is done by finding the smallest section of the data in row that falls within the desired time range
@@ -111,35 +101,35 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
         Return [(start time, start offset),(end_time,end_offset)]
         '''
-        etime = UTCDateTime( row[20] )
-        row_stime = UTCDateTime( row[5] )
-        row_etime = UTCDateTime( row[6] )
+        etime = UTCDateTime(row[20])
+        row_stime = UTCDateTime(row[5])
+        row_etime = UTCDateTime(row[6])
 
         # If we need a subset of the this block, trim it accordingly
         block_start = int(row[9])
         block_end = block_start + int(row[10])
         if stime > row_stime or etime < row_etime:
             tix = [x.split("=>") for x in row[12].split(",")]
-            if tix[-1][0]=='latest':
-                tix[-1] = [str(row_etime.timestamp),block_end]
+            if tix[-1][0] == 'latest':
+                tix[-1] = [str(row_etime.timestamp), block_end]
             to_x = [float(x[0]) for x in tix]
-            s_index = bisect.bisect_right( to_x, stime.timestamp )-1
+            s_index = bisect.bisect_right(to_x, stime.timestamp) - 1
             if s_index < 0:
                 s_index = 0
-            e_index = bisect.bisect_right( to_x, etime.timestamp )
+            e_index = bisect.bisect_right(to_x, etime.timestamp)
             off_start = int(tix[s_index][1])
             if e_index >= len(tix):
                 e_index = -1
             off_end = int(tix[e_index][1])
-            return ([to_x[s_index],off_start,stime > row_stime], [to_x[e_index],off_end,etime < row_etime],)
+            return ([to_x[s_index], off_start, stime > row_stime], [to_x[e_index], off_end, etime < row_etime],)
         else:
-            return ([row_stime.timestamp,block_start,False], [row_etime.timestamp,block_end,False])
+            return ([row_stime.timestamp, block_start, False], [row_etime.timestamp, block_end, False])
 
     # GET
     def do_GET(self):
         '''Handle a GET request
         '''
-        logger.info( "GET: %s" % self.path )
+        logger.info("GET: %s" % self.path)
 
         try:
             request = DataselectRequest(self.path)
@@ -154,10 +144,10 @@ Service: fdsnws-dataselect  version %d.%d.%d
     def do_POST(self):
         '''Handle a POST request
         '''
-        logger.info( "POST: %s" % self.path )
+        logger.info("POST: %s" % self.path)
 
         request_text = self.rfile.read(int(self.headers['Content-Length'])).decode("utf-8")
-        logger.info( "POST query:\n%s" % request_text )
+        logger.info("POST query:\n%s" % request_text)
 
         try:
             request = DataselectRequest(self.path, request_text)
@@ -165,16 +155,18 @@ Service: fdsnws-dataselect  version %d.%d.%d
         except QueryError as e:
             self.return_error(400, str(e))
 
-
-    def common_process( self, request):
+    def common_process(self, request):
         '''Common processing for both GET and POST requests
         '''
 
         if request.endpoint == 'version':
+            # TODO
             self.return_error(404, "Version")
             return
         elif request.endpoint == 'application.wadl':
+            # TODO
             self.return_error(404, "wadl")
+            return
 
         request_time = time.time()
         request_time_str = UTCDateTime(int(request_time)).isoformat() + "Z"
@@ -192,27 +184,27 @@ Service: fdsnws-dataselect  version %d.%d.%d
         if self.server.params['request_limit'] > 0:
             try:
                 for row in index_rows:
-                    stime = UTCDateTime( row[19] )
-                    etime = UTCDateTime( row[20] )
-                    trim_info = self.handle_trimming( stime, etime, row )
-                    total_bytes += trim_info[1][1]-trim_info[0][1]
+                    stime = UTCDateTime(row[19])
+                    etime = UTCDateTime(row[20])
+                    trim_info = self.handle_trimming(stime, etime, row)
+                    total_bytes += trim_info[1][1] - trim_info[0][1]
                     if total_bytes > self.server.params['request_limit']:
-                        self.return_error( 413, "Result exceeds limit of %d bytes" % self.server.params['request_limit'])
+                        self.return_error(413, "Result exceeds limit of %d bytes" % self.server.params['request_limit'])
                         return False
             except Exception as err:
                 import traceback
                 traceback.print_exc()
-                self.return_error( 500, "Error accessing data index: %s" % str(err) )
+                self.return_error(500, "Error accessing data index: %s" % str(err))
                 return False
 
         # Error if request matches no data
-        if total_bytes==0:
-            self.return_error( int(request.bulk_params['nodata']), "No data matched selection" )
+        if total_bytes == 0:
+            self.return_error(int(request.bulk_params['nodata']), "No data matched selection")
             return False
 
         # Send success response status code and headers
         self.send_response(200)
-        self.send_header('Content-Type','application/vnd.fdsn.mseed')
+        self.send_header('Content-Type', 'application/vnd.fdsn.mseed')
         self.send_header('Content-Disposition',
                          'attachment; filename=fdsnws-dataselect_%s.mseed' % request_time_str)
         self.end_headers()
@@ -228,22 +220,22 @@ Service: fdsnws-dataselect  version %d.%d.%d
         src_bytes = dict()
         try:
             for row in index_rows:
-                stime = UTCDateTime( row[19] )
-                etime = UTCDateTime( row[20] )
+                stime = UTCDateTime(row[19])
+                etime = UTCDateTime(row[20])
                 sepoch = stime.timestamp
                 eepoch = etime.timestamp
-                trim_info = self.handle_trimming( stime, etime, row )
-                shipped_bytes = 0;
+                trim_info = self.handle_trimming(stime, etime, row)
+                shipped_bytes = 0
                 filename = row[8]
 
                 # Data file path replacement
                 if dp_replace:
-                    filename = dp_replace.sub(self.server.params['datapath_replace'][1],filename)
+                    filename = dp_replace.sub(self.server.params['datapath_replace'][1], filename)
 
                 # Iterate through records in section if only part of the section is needed
                 if trim_info[0][2] or trim_info[1][2]:
 
-                    for msri in MSR_iterator( filename=filename, startoffset=trim_info[0][1], dataflag=False ):
+                    for msri in MSR_iterator(filename=filename, startoffset=trim_info[0][1], dataflag=False):
                         offset = msri.get_offset()
 
                         # Done if we are beyond end offset
@@ -259,17 +251,17 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
                             # Trim record if coverage (samprate > 0) and partial overlap with request
                             if row[7] > 0 and (msrstart < stime or msrend > etime):
-                                logger.debug ("Trimming record %s @ %s" % (msri.get_srcname(), msri.get_starttime()))
-                                tr = mseed_read( BytesIO(ctypes.string_at(msri.msr.contents.record, reclen)), format="MSEED" )[0]
-                                tr.trim( stime, etime )
-                                st = Stream( traces=[tr] )
-                                st.write( self.wfile, format="MSEED" )
+                                logger.debug("Trimming record %s @ %s" % (msri.get_srcname(), msri.get_starttime()))
+                                tr = mseed_read(BytesIO(ctypes.string_at(msri.msr.contents.record, reclen)), format="MSEED")[0]
+                                tr.trim(stime, etime)
+                                st = Stream(traces=[tr])
+                                st.write(self.wfile, format="MSEED")
 
                             # Otherwise, write un-trimmed record
                             else:
                                 # Construct to avoid copying the data, supposedly
-                                self.wfile.write( (ctypes.c_char * reclen).
-                                                  from_address(ctypes.addressof(msri.msr.contents.record.contents)) )
+                                self.wfile.write((ctypes.c_char * reclen).
+                                                 from_address(ctypes.addressof(msri.msr.contents.record.contents)))
 
                             shipped_bytes += reclen
 
@@ -279,10 +271,10 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
                 # Otherwise, return the entire section
                 else:
-                    with open( filename, "rb" ) as f:
-                        f.seek( trim_info[0][1] )
-                        raw_data = f.read( row[10] )
-                        self.wfile.write( raw_data )
+                    with open(filename, "rb") as f:
+                        f.seek(trim_info[0][1])
+                        raw_data = f.read(row[10])
+                        self.wfile.write(raw_data)
                         shipped_bytes += row[10]
 
                 # Accumulate shipped bytes
@@ -298,12 +290,12 @@ Service: fdsnws-dataselect  version %d.%d.%d
                             src_bytes[srcname] = shipped_bytes
 
         except Exception as err:
-            self.return_error( 500, "Error accessing data: %s" % str(err) )
+            self.return_error(500, "Error accessing data: %s" % str(err))
             return False
 
         # Error if request matches no data
-        if total_bytes==0:
-            self.return_error( int(request.bulk_params['nodata']), "No data matched selection" )
+        if total_bytes == 0:
+            self.return_error(int(request.bulk_params['nodata']), "No data matched selection")
             return False
 
         duration = time.time() - request_time
@@ -312,24 +304,24 @@ Service: fdsnws-dataselect  version %d.%d.%d
         client_ip = self.address_string()
         try:
             client_host = socket.gethostbyaddr(client_ip)[0]
-        except:
+        except Exception:
             client_host = client_ip
-        user_agent = self.headers.get( 'User-Agent', '?' )
+        user_agent = self.headers.get('User-Agent', '?')
 
         # Write shipment log
         if self.server.params['shiplogdir']:
-            shiplogfile = os.path.join( self.server.params['shiplogdir'],
-                                        time.strftime( "shipment-%Y-%m-%dZ", time.gmtime( request_time ) ) )
+            shiplogfile = os.path.join(self.server.params['shiplogdir'],
+                                       time.strftime("shipment-%Y-%m-%dZ", time.gmtime(request_time)))
 
-            with open( shiplogfile, "a" ) as f:
-                f.write ( "START CLIENT %s [%s] @ %s [%s]\n" % (client_host, client_ip, request_time_str, user_agent) )
+            with open(shiplogfile, "a") as f:
+                f.write("START CLIENT %s [%s] @ %s [%s]\n" % (client_host, client_ip, request_time_str, user_agent))
 
                 for srcname in sorted(src_bytes.keys()):
-                    f.write( "%s %s\n" % (srcname, src_bytes[srcname]) )
+                    f.write("%s %s\n" % (srcname, src_bytes[srcname]))
 
-                f.write( "END CLIENT %s [%s] total bytes: %d\n" % (client_host, client_ip, total_bytes) )
+                f.write("END CLIENT %s [%s] total bytes: %d\n" % (client_host, client_ip, total_bytes))
 
-        logger.info( "shipped %d bytes for request %s in %d seconds" % (total_bytes, self.path, duration) )
+        logger.info("shipped %d bytes for request %s in %d seconds" % (total_bytes, self.path, duration))
 
         return
 
@@ -372,7 +364,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
             for req in query_rows:
                 # Replace "--" location ID request alias with true empty value
                 if req[2] == "--":
-                    req[2] = "";
+                    req[2] = ""
 
                 cur.execute("INSERT INTO {0} (network,station,location,channel,starttime,endtime) "
                             "VALUES (?,?,?,?,?,?) ".format(request_table), req)
@@ -383,7 +375,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
             raise ValueError(str(err))
 
         # Determine if all_channel_summary table exists
-        cur.execute("SELECT count(*) FROM sqlite_master WHERE type='table' and name='all_channel_summary'");
+        cur.execute("SELECT count(*) FROM sqlite_master WHERE type='table' and name='all_channel_summary'")
         acs_present = cur.fetchone()[0]
 
         wildcards = False
@@ -408,24 +400,24 @@ Service: fdsnws-dataselect  version %d.%d.%d
         # Fetch final results by joining resolved and index table
         try:
             sql = ("SELECT DISTINCT ts.network,ts.station,ts.location,ts.channel,ts.quality, "
-                        "ts.starttime,ts.endtime,ts.samplerate, "
-                        "ts.filename,ts.byteoffset,ts.bytes,ts.hash, "
-                        "ts.timeindex,ts.timespans,ts.timerates, "
-                        "ts.format,ts.filemodtime,ts.updated,ts.scanned, r.starttime, r.endtime "
-                        "FROM {0} ts, {1} r "
-                        "WHERE "
-                        "  ts.network {2} r.network "
-                        "  AND ts.station {2} r.station "
-                        "  AND ts.location {2} r.location "
-                        "  AND ts.channel {2} r.channel "
-                        "  AND ts.starttime <= r.endtime "
-                        "  AND ts.starttime >= datetime(r.starttime,'-{3} days') "
-                        "  AND ts.endtime >= r.starttime "
-                        "ORDER BY ts.network,ts.station,ts.location,ts.channel"
-                        .format(self.server.params['index_table'],
-                                request_table, "GLOB" if wildcards else "=",
-                                self.server.params['maxsectiondays']))
-            cur.execute( sql )
+                   "ts.starttime,ts.endtime,ts.samplerate, "
+                   "ts.filename,ts.byteoffset,ts.bytes,ts.hash, "
+                   "ts.timeindex,ts.timespans,ts.timerates, "
+                   "ts.format,ts.filemodtime,ts.updated,ts.scanned, r.starttime, r.endtime "
+                   "FROM {0} ts, {1} r "
+                   "WHERE "
+                   "  ts.network {2} r.network "
+                   "  AND ts.station {2} r.station "
+                   "  AND ts.location {2} r.location "
+                   "  AND ts.channel {2} r.channel "
+                   "  AND ts.starttime <= r.endtime "
+                   "  AND ts.starttime >= datetime(r.starttime,'-{3} days') "
+                   "  AND ts.endtime >= r.starttime "
+                   "ORDER BY ts.network,ts.station,ts.location,ts.channel"
+                   .format(self.server.params['index_table'],
+                           request_table, "GLOB" if wildcards else "=",
+                           self.server.params['maxsectiondays']))
+            cur.execute(sql)
 
         except Exception as err:
             import traceback
@@ -459,23 +451,23 @@ Service: fdsnws-dataselect  version %d.%d.%d
         # Create resolved request table by joining with all_channel_summary
         try:
             sql = ("CREATE TEMPORARY TABLE {0} "
-                           "(network TEXT, station TEXT, location TEXT, channel TEXT, "
-                           "starttime TEXT, endtime TEXT) ".format(requesttable))
-            cursor.execute( sql )
+                   "(network TEXT, station TEXT, location TEXT, channel TEXT, "
+                   "starttime TEXT, endtime TEXT) ".format(requesttable))
+            cursor.execute(sql)
 
             sql = ("INSERT INTO {0} (network,station,location,channel,starttime,endtime) "
-                           "SELECT s.network,s.station,s.location,s.channel,"
-                           "CASE WHEN r.starttime='*' THEN s.earliest ELSE r.starttime END,"
-                           "CASE WHEN r.endtime='*' THEN s.latest ELSE r.endtime END "
-                           "FROM all_channel_summary s, {1} r "
-                           "WHERE "
-                           "  (r.starttime='*' OR r.starttime <= s.latest) "
-                           "  AND (r.endtime='*' OR r.endtime >= s.earliest) "
-                           "  AND (r.network='*' OR s.network GLOB r.network) "
-                           "  AND (r.station='*' OR s.station GLOB r.station) "
-                           "  AND (r.location='*' OR s.location GLOB r.location) "
-                           "  AND (r.channel='*' OR s.channel GLOB r.channel) ".format(requesttable,requesttable_orig))
-            cursor.execute( sql )
+                   "SELECT s.network,s.station,s.location,s.channel,"
+                   "CASE WHEN r.starttime='*' THEN s.earliest ELSE r.starttime END,"
+                   "CASE WHEN r.endtime='*' THEN s.latest ELSE r.endtime END "
+                   "FROM all_channel_summary s, {1} r "
+                   "WHERE "
+                   "  (r.starttime='*' OR r.starttime <= s.latest) "
+                   "  AND (r.endtime='*' OR r.endtime >= s.earliest) "
+                   "  AND (r.network='*' OR s.network GLOB r.network) "
+                   "  AND (r.station='*' OR s.station GLOB r.station) "
+                   "  AND (r.location='*' OR s.location GLOB r.location) "
+                   "  AND (r.channel='*' OR s.channel GLOB r.channel) ".format(requesttable, requesttable_orig))
+            cursor.execute(sql)
 
         except Exception as err:
             raise ValueError(str(err))
@@ -483,5 +475,3 @@ Service: fdsnws-dataselect  version %d.%d.%d
         resolvedrows = cursor.execute("SELECT COUNT(*) FROM {0}".format(requesttable)).fetchone()[0]
 
         cursor.execute("DROP TABLE {0}".format(requesttable_orig))
-
-        return
