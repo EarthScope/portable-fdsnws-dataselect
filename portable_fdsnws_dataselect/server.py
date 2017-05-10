@@ -13,6 +13,7 @@ import socket
 import base64
 import sys
 import configparser
+from portable_fdsnws_dataselect.miniseed import MiniseedDataExtractor
 
 logger = None
 
@@ -90,6 +91,10 @@ def run_server(params):
 
     for p in sorted(server.params.keys()):
         logger.info('CONFIG %s: %s' % (p, str(server.params[p])))
+
+    # Create and configure the data extraction
+    server.data_extractor = MiniseedDataExtractor(
+        params['datapath_replace'], params['request_limit'])
 
     server.serve_forever()
 

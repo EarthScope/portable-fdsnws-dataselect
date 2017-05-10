@@ -14,6 +14,43 @@ from future.backports.urllib.parse import parse_qs, urlparse
 
 logger = getLogger(__name__)
 
+#: Parameters that correspond to time/channel constraints (appear in rows in a POST request)
+ROW_PARAM_KEYS = ('starttime', 'endtime', 'network', 'station', 'location', 'channel',)
+
+#: Parameters that apply to the entire query (appear as key/value pairs in a POST request)
+BULK_PARAM_KEYS = ('quality', 'minimumlength', 'longestonly', 'format', 'nodata',)
+
+#: Alternate parameter names
+PARAM_SUBSTITUTIONS = {
+    'start': 'starttime',
+    'end': 'endtime',
+    'loc': 'location',
+    'net': 'network',
+    'sta': 'station',
+    'cha': 'channel',
+}
+
+#: Default parameter values
+DEFAULT_PARAMS = {
+    'starttime': '1970-01-01',
+    'endtime': '2170-12-31T23:59:59.999999',
+    'format': 'miniseed',
+    'nodata': '204',
+    'network': '*',
+    'station': '*',
+    'location': '*',
+    'channel': '*',
+    'quality': 'B',
+    'minimumlength': '0.0',
+    'longestonly': 'FALSE',
+}
+
+#: Parameters required for any query
+REQUIRED_PARAMS = ('starttime', 'endtime',)
+
+#: Valid endpoints
+QUERY_ENDPOINTS = ('query', 'queryauth', 'version', 'application.wadl',)
+
 
 def parse_datetime(timestring):
     '''
@@ -55,6 +92,9 @@ class NonQueryURLError(Exception):
 
 
 class DataselectRequest(object):
+    """
+    Parse, validate, and expose a dataselect request.
+    """
 
     #: Endpoint (eg. "query", "queryauth", "version", "application.wadl")
     endpoint = None
@@ -64,41 +104,6 @@ class DataselectRequest(object):
     query_rows = None
     #: Non-row parameters (eg. format, minimumlength)
     bulk_params = None
-
-    #: Parameters that correspond to time/channel constraints (appear in rows in a POST request)
-    row_param_keys = ('starttime', 'endtime', 'network', 'station', 'location', 'channel',)
-    #: Parameters that apply to the entire query (appear as key/value pairs in a POST request)
-    bulk_param_keys = ('quality', 'minimumlength', 'longestonly', 'format', 'nodata',)
-    #: Alternate parameter names
-    abbreviations = {
-        'start': 'starttime',
-        'end': 'endtime',
-        'loc': 'location',
-        'net': 'network',
-        'sta': 'station',
-        'cha': 'channel',
-    }
-
-    #: Default parameter values
-    default_params = {
-        'starttime': '1970-01-01',
-        'endtime': '2170-12-31T23:59:59.999999',
-        'format': 'miniseed',
-        'nodata': '204',
-        'network': '*',
-        'station': '*',
-        'location': '*',
-        'channel': '*',
-        'quality': 'B',
-        'minimumlength': '0.0',
-        'longestonly': 'FALSE',
-    }
-
-    #: Parameters required for any query
-    required_params = ('starttime', 'endtime',)
-
-    #: Valid endpoints
-    endpoints = ('query', 'queryauth', 'version', 'application.wadl',)
 
     def __init__(self, path, body=None):
         """
@@ -130,7 +135,7 @@ class DataselectRequest(object):
             raise NonQueryURLError(path)
         # Check for valid suffix to path & respond if not a data request
         path_tail = path[len(prefix):]
-        if path_tail not in self.endpoints:
+        if path_tail not in QUERY_ENDPOINTS:
             raise NonQueryURLError(path)
         return path_tail
 
@@ -139,10 +144,10 @@ class DataselectRequest(object):
         Parse a GET query string and convert it into a POST-style text block.
         """
         qry = parse_qs(query)
-        sql_qry = dict(self.default_params)
-        required = list(self.required_params)
+        sql_qry = dict(DEFAULT_PARAMS)
+        required = list(REQUIRED_PARAMS)
         for k, v in qry.items():
-            k = self.abbreviations.get(k, k)
+            k = PARAM_SUBSTITUTIONS.get(k, k)
             if k not in sql_qry:
                 raise QueryError("Unrecognized query parameter: '%s'" % k)
             elif len(v) > 1:
@@ -169,7 +174,7 @@ class DataselectRequest(object):
 
         # Build a string for the matching request as a POST body
         bulk = []
-        for k in self.bulk_param_keys:
+        for k in BULK_PARAM_KEYS:
             bulk.append("%s=%s" % (k, sql_qry[k]))
         for n in sql_qry['network'].split(","):
             for s in sql_qry['station'].split(","):
@@ -204,7 +209,7 @@ class DataselectRequest(object):
         Each line will be split into a list and added to `self.query_rows`
         '''
         self.query_rows = []
-        self.bulk_params = dict(((k, self.default_params[k]) for k in self.bulk_param_keys))
+        self.bulk_params = dict(((k, DEFAULT_PARAMS[k]) for k in BULK_PARAM_KEYS))
         linenumber = 1
         linematch = re.compile('^[\w\?\*]{1,2}\s+[\w\?\*]{1,5}\s+[-\w\?\*]{1,2}\s+[\w\?\*]{1,3}\s+[-:T.*\d]+\s+[-:T.*\d]+$')
         inprefix = True
@@ -235,13 +240,13 @@ class DataselectRequest(object):
                 if fields[4] != '*':
                     try:
                         fields[4] = normalize_datetime(fields[4])
-                    except:
+                    except Exception:
                         raise QueryError("Cannot normalize start time (line {0:d}): {1:s}".format(linenumber, fields[4]))
 
                 if fields[5] != '*':
                     try:
                         fields[5] = normalize_datetime(fields[5])
-                    except:
+                    except Exception:
                         raise QueryError("Cannot normalize start time (line {0:d}): {1:s}".format(linenumber, fields[4]))
 
                 self.query_rows.append(fields)

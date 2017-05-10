@@ -26,6 +26,7 @@ from logging import getLogger
 from portable_fdsnws_dataselect.request import DataselectRequest, QueryError, NonQueryURLError
 from io import BytesIO
 import socket
+from portable_fdsnws_dataselect.miniseed import NoDataError, RequestLimitExceededError
 
 logger = getLogger(__name__)
 
@@ -93,38 +94,6 @@ Service: fdsnws-dataselect  version %d.%d.%d
         path = urlparse(self.path).path
         return "http://%s:%d%s%s" % (self.server.server_name, self.server.server_port, path, query)
 
-    def handle_trimming(self, stime, etime, row):
-        '''Get the time & byte-offsets for the data in time range (stime, etime)
-
-        This is done by finding the smallest section of the data in row that falls within the desired time range
-        and is identified by the timindex field of row
-
-        Return [(start time, start offset),(end_time,end_offset)]
-        '''
-        etime = UTCDateTime(row[20])
-        row_stime = UTCDateTime(row[5])
-        row_etime = UTCDateTime(row[6])
-
-        # If we need a subset of the this block, trim it accordingly
-        block_start = int(row[9])
-        block_end = block_start + int(row[10])
-        if stime > row_stime or etime < row_etime:
-            tix = [x.split("=>") for x in row[12].split(",")]
-            if tix[-1][0] == 'latest':
-                tix[-1] = [str(row_etime.timestamp), block_end]
-            to_x = [float(x[0]) for x in tix]
-            s_index = bisect.bisect_right(to_x, stime.timestamp) - 1
-            if s_index < 0:
-                s_index = 0
-            e_index = bisect.bisect_right(to_x, etime.timestamp)
-            off_start = int(tix[s_index][1])
-            if e_index >= len(tix):
-                e_index = -1
-            off_end = int(tix[e_index][1])
-            return ([to_x[s_index], off_start, stime > row_stime], [to_x[e_index], off_end, etime < row_etime],)
-        else:
-            return ([row_stime.timestamp, block_start, False], [row_etime.timestamp, block_end, False])
-
     # GET
     def do_GET(self):
         '''Handle a GET request
@@ -173,129 +142,39 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
         # Get the corresponding index DB entries
         try:
-            index_rows = self.fetch_index_rows(request.bulk_params, request.query_rows)
+            index_rows = self.fetch_index_rows(request.query_rows)
         except Exception as err:
             self.return_error(400, str(err))
             return
 
-        # Pre-scan the index rows, to see if the request is small enough to satisfy
-        # Accumulated estimate of output bytes will be equal to or higher than actual output
         total_bytes = 0
-        if self.server.params['request_limit'] > 0:
-            try:
-                for row in index_rows:
-                    stime = UTCDateTime(row[19])
-                    etime = UTCDateTime(row[20])
-                    trim_info = self.handle_trimming(stime, etime, row)
-                    total_bytes += trim_info[1][1] - trim_info[0][1]
-                    if total_bytes > self.server.params['request_limit']:
-                        self.return_error(413, "Result exceeds limit of %d bytes" % self.server.params['request_limit'])
-                        return False
-            except Exception as err:
-                import traceback
-                traceback.print_exc()
-                self.return_error(500, "Error accessing data index: %s" % str(err))
-                return False
+        src_bytes = {}
 
-        # Error if request matches no data
-        if total_bytes == 0:
-            self.return_error(int(request.bulk_params['nodata']), "No data matched selection")
-            return False
-
-        # Send success response status code and headers
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/vnd.fdsn.mseed')
-        self.send_header('Content-Disposition',
-                         'attachment; filename=fdsnws-dataselect_%s.mseed' % request_time_str)
-        self.end_headers()
-
-        # Precompile the match regex for data path replacement
-        if self.server.params['datapath_replace']:
-            dp_replace = re.compile(self.server.params['datapath_replace'][0])
-        else:
-            dp_replace = None
-
-        # Get & return the actual data
-        total_bytes = 0
-        src_bytes = dict()
         try:
-            for row in index_rows:
-                stime = UTCDateTime(row[19])
-                etime = UTCDateTime(row[20])
-                sepoch = stime.timestamp
-                eepoch = etime.timestamp
-                trim_info = self.handle_trimming(stime, etime, row)
-                shipped_bytes = 0
-                filename = row[8]
-
-                # Data file path replacement
-                if dp_replace:
-                    filename = dp_replace.sub(self.server.params['datapath_replace'][1], filename)
-
-                # Iterate through records in section if only part of the section is needed
-                if trim_info[0][2] or trim_info[1][2]:
-
-                    for msri in MSR_iterator(filename=filename, startoffset=trim_info[0][1], dataflag=False):
-                        offset = msri.get_offset()
-
-                        # Done if we are beyond end offset
-                        if offset >= trim_info[1][1]:
-                            break
-
-                        msrstart = msri.get_startepoch()
-                        msrend = msri.get_endepoch()
-                        reclen = msri.msr.contents.reclen
-
-                        # Process records that intersect with request time window
-                        if msrstart < eepoch and msrend > sepoch:
-
-                            # Trim record if coverage (samprate > 0) and partial overlap with request
-                            if row[7] > 0 and (msrstart < stime or msrend > etime):
-                                logger.debug("Trimming record %s @ %s" % (msri.get_srcname(), msri.get_starttime()))
-                                tr = mseed_read(BytesIO(ctypes.string_at(msri.msr.contents.record, reclen)), format="MSEED")[0]
-                                tr.trim(stime, etime)
-                                st = Stream(traces=[tr])
-                                st.write(self.wfile, format="MSEED")
-
-                            # Otherwise, write un-trimmed record
-                            else:
-                                # Construct to avoid copying the data, supposedly
-                                self.wfile.write((ctypes.c_char * reclen).
-                                                 from_address(ctypes.addressof(msri.msr.contents.record.contents)))
-
-                            shipped_bytes += reclen
-
-                        # Done if this record was the last in the section
-                        if (offset + reclen) >= trim_info[1][1]:
-                            break
-
-                # Otherwise, return the entire section
-                else:
-                    with open(filename, "rb") as f:
-                        f.seek(trim_info[0][1])
-                        raw_data = f.read(row[10])
-                        self.wfile.write(raw_data)
-                        shipped_bytes += row[10]
-
-                # Accumulate shipped bytes
-                if shipped_bytes != 0:
+            # Extract the data, writing each returned segment to the response
+            for data_segment in self.server.data_extractor.extract_data(index_rows):
+                shipped_bytes = data_segment.get_num_bytes()
+                src_name = data_segment.get_src_name()
+                if shipped_bytes > 0:
+                    # If this is the first segment to be written, add the response headers first
+                    if total_bytes == 0:
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/vnd.fdsn.mseed')
+                        self.send_header('Content-Disposition',
+                                         'attachment; filename=fdsnws-dataselect_%s.mseed' % request_time_str)
+                        self.end_headers()
+                    data_segment.write(self.wfile)
                     total_bytes += shipped_bytes
-
-                    # Per-channel bytes for shipment log
-                    if self.server.params['shiplogdir']:
-                        srcname = msri.get_srcname()
-                        if srcname in src_bytes:
-                            src_bytes[srcname] += shipped_bytes
-                        else:
-                            src_bytes[srcname] = shipped_bytes
-
-        except Exception as err:
-            self.return_error(500, "Error accessing data: %s" % str(err))
-            return False
-
-        # Error if request matches no data
-        if total_bytes == 0:
+                    src_bytes.setdefault(src_name, 0)
+                    src_bytes[src_name] += shipped_bytes
+        except NoDataError:
             self.return_error(int(request.bulk_params['nodata']), "No data matched selection")
+            return False
+        except RequestLimitExceededError as limit_err:
+            self.return_error(413, str(limit_err))
+            return False
+        except Exception as err:
+            self.return_error(500, str(err))
             return False
 
         duration = time.time() - request_time
@@ -325,10 +204,11 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
         return
 
-    def fetch_index_rows(self, bulk_params, query_rows):
-        '''Fetch index rows matching specified request[]
+    def fetch_index_rows(self, query_rows):
+        '''
+        Fetch index rows matching specified request
 
-        `request`: List of tuples containing (net,sta,loc,chan,start,end)
+        `query_rows`: List of tuples containing (net,sta,loc,chan,start,end)
 
         Request elements may contain '?' and '*' wildcards.  The start and
         end elements can be a single '*' if not a date-time string.
