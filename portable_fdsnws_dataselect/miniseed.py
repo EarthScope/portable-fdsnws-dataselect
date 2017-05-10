@@ -60,17 +60,19 @@ class MSRIDataSegment(ExtractedDataSegment):
     """
     Segment of data from a MSR_iterator
     """
-    def __init__(self, msri, coverage, start_time, end_time):
+    def __init__(self, msri, sample_rate, start_time, end_time, src_name):
         """
         :param msri: A `MSR_iterator`
-        :param coverage: Boolean indicating coverage (sample rate > 0)
+        :param sample_rate: Sample rate of the data
         :param start_time: A `UTCDateTime` giving the start of the requested data
         :param end_time: A `UTCDateTime` giving the end of the requested data
+        :param src_name: Name of the data source for logging
         """
         self.msri = msri
-        self.coverage = coverage
+        self.sample_rate = sample_rate
         self.start_time = start_time
         self.end_time = end_time
+        self.src_name = src_name
 
     def write(self, wfile):
         msrstart = self.msri.get_startepoch()
@@ -84,8 +86,8 @@ class MSRIDataSegment(ExtractedDataSegment):
         if msrstart < eepoch and msrend > sepoch:
 
             # Trim record if coverage and partial overlap with request
-            if self.coverage and (msrstart < self.start_time or msrend > self.end_time):
-                logger.debug("Trimming record %s @ %s" % (self.msri.get_srcname(), self.msri.get_starttime()))
+            if self.sample_rate > 0 and (msrstart < self.start_time or msrend > self.end_time):
+                logger.debug("Trimming record %s @ %s" % (self.src_name, self.msri.get_starttime()))
                 tr = mseed_read(BytesIO(ctypes.string_at(self.msri.msr.contents.record, reclen)), format="MSEED")[0]
                 tr.trim(self.start_time, self.end_time)
                 st = Stream(traces=[tr])
@@ -102,7 +104,7 @@ class MSRIDataSegment(ExtractedDataSegment):
         return self.msri.msr.contents.reclen
 
     def get_src_name(self):
-        return self.msri.get_srcname()
+        return self.src_name
 
 
 class FileDataSegment(ExtractedDataSegment):
@@ -219,6 +221,7 @@ class MiniseedDataExtractor(object):
             etime = UTCDateTime(row[20])
             trim_info = self.handle_trimming(stime, etime, row)
             filename = row[8]
+            src_name = "_".join(row[:4])
 
             # Data file path replacement
             if self.dp_replace_re:
@@ -234,7 +237,7 @@ class MiniseedDataExtractor(object):
                     if offset >= trim_info[1][1]:
                         break
 
-                    yield MSRIDataSegment(msri, row[7] > 0, stime, etime)
+                    yield MSRIDataSegment(msri, row[7], stime, etime, src_name)
 
                     # Check for passing end offset
                     if (offset + msri.msr.contents.reclen) >= trim_info[1][1]:
@@ -242,4 +245,4 @@ class MiniseedDataExtractor(object):
 
             # Otherwise, return the entire section
             else:
-                yield FileDataSegment(filename, trim_info[0][1], row[10], "?")  # TODO: how to get src_name?
+                yield FileDataSegment(filename, trim_info[0][1], row[10], src_name)
