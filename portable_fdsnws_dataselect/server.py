@@ -108,7 +108,7 @@ def main():
 
     # Build argument parser
     parser = argparse.ArgumentParser(description='Portable fdsnws-dataselect server')
-    parser.add_argument('configfile', action='store')
+    parser.add_argument('configfile', nargs='?', action='store')
     parser.add_argument("-s", "--sample_config",
                         action="store_true", dest="genconfig", default=False,
                         help="Generate a sample config file & quit")
@@ -123,6 +123,9 @@ def main():
         with open(os.path.join(os.path.dirname(pkg_path), 'example', 'server.ini'), 'r') as f:
             print(f.read())
         sys.exit(0)
+
+    if not args.configfile:
+        parser.error('No database file is specified.  Try -h for more help.')
 
     # Check for and read config file
     if not os.path.exists(args.configfile):
