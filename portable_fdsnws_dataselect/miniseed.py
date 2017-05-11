@@ -14,6 +14,7 @@ from _io import BytesIO
 import ctypes
 from obspy.core.stream import Stream
 import re
+import os
 
 logger = getLogger(__name__)
 
@@ -194,18 +195,30 @@ class MiniseedDataExtractor(object):
         :yields: sequence of `ExtractedDataSegment`s
         """
 
-        # Pre-scan the index rows, to see if the request is small enough to satisfy
-        # Accumulated estimate of output bytes will be equal to or higher than actual output
+        # Pre-scan the index rows:
+        # 1) Build processed list for extraction
+        # 2) Check if the request is small enough to satisfy
+        # Note: accumulated estimate of output bytes will be equal to or higher than actual output
         total_bytes = 0
+        request_rows = []
         if self.request_limit > 0:
             try:
                 for row in index_rows:
+                    src_name = "_".join(row[:4])
+                    sample_rate = row[7]
+                    file_name = row[8]
+                    section_bytes = row[10]
                     stime = UTCDateTime(row[19])
                     etime = UTCDateTime(row[20])
                     trim_info = self.handle_trimming(stime, etime, row)
                     total_bytes += trim_info[1][1] - trim_info[0][1]
                     if total_bytes > self.request_limit:
                         raise RequestLimitExceededError("Result exceeds limit of %d bytes" % self.request_limit)
+                    if self.dp_replace_re:
+                        file_name = self.dp_replace_re.sub(self.dp_replace_sub, file_name)
+                    if not os.path.exists(file_name):
+                        raise Exception("Data file does not exist: %s" % file_name)
+                    request_rows.append([src_name,file_name,stime,etime,trim_info,section_bytes,sample_rate])
             except Exception as err:
                 import traceback
                 traceback.print_exc()
@@ -216,28 +229,23 @@ class MiniseedDataExtractor(object):
             raise NoDataError()
 
         # Get & return the actual data
-        for row in index_rows:
-            stime = UTCDateTime(row[19])
-            etime = UTCDateTime(row[20])
-            trim_info = self.handle_trimming(stime, etime, row)
-            filename = row[8]
-            src_name = "_".join(row[:4])
-
-            # Data file path replacement
-            if self.dp_replace_re:
-                filename = self.dp_replace_re.sub(self.dp_replace_sub, filename)
+        for row in request_rows:
+            # row:
+            # 0:src_name, 1:file_name, 2:UTCDateTime(stime), 3:UTCDateTime(etime)
+            # 4:trim_info, 5:section_bytes, 6:sample_rate
+            trim_info = row[4];
 
             # Iterate through records in section if only part of the section is needed
             if trim_info[0][2] or trim_info[1][2]:
 
-                for msri in MSR_iterator(filename=filename, startoffset=trim_info[0][1], dataflag=False):
+                for msri in MSR_iterator(filename=row[1], startoffset=trim_info[0][1], dataflag=False):
                     offset = msri.get_offset()
 
                     # Done if we are beyond end offset
                     if offset >= trim_info[1][1]:
                         break
 
-                    yield MSRIDataSegment(msri, row[7], stime, etime, src_name)
+                    yield MSRIDataSegment(msri, row[6], row[2], row[3], row[0])
 
                     # Check for passing end offset
                     if (offset + msri.msr.contents.reclen) >= trim_info[1][1]:
@@ -245,4 +253,4 @@ class MiniseedDataExtractor(object):
 
             # Otherwise, return the entire section
             else:
-                yield FileDataSegment(filename, trim_info[0][1], row[10], src_name)
+                yield FileDataSegment(file_name, trim_info[0][1], row[5], row[0])
