@@ -5,12 +5,12 @@ HTTP request handler
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 from future.builtins import *  # NOQA
-from logging import getLogger
-import re
-import datetime
-from portable_fdsnws_dataselect import version, pkg_path
-import os.path
 from future.backports.urllib.parse import parse_qs, urlparse
+from logging import getLogger
+import os.path
+import datetime
+import re
+from portable_fdsnws_dataselect import version, pkg_path
 
 logger = getLogger(__name__)
 
@@ -32,8 +32,8 @@ PARAM_SUBSTITUTIONS = {
 
 #: Default parameter values
 DEFAULT_PARAMS = {
-    'starttime': '1970-01-01',
-    'endtime': '2170-12-31T23:59:59.999999',
+    'starttime': '1900-01-01T00:00:00.000000',
+    'endtime': '2100-01-01T00:00:00.000000',
     'format': 'miniseed',
     'nodata': '204',
     'network': '*',
@@ -49,7 +49,7 @@ DEFAULT_PARAMS = {
 REQUIRED_PARAMS = ('starttime', 'endtime',)
 
 #: Valid endpoints
-QUERY_ENDPOINTS = ('query', 'queryauth', 'version', 'application.wadl',)
+QUERY_ENDPOINTS = ('query', 'queryauth', 'extent', 'version', 'application.wadl',)
 
 
 def parse_datetime(timestring):
@@ -96,7 +96,7 @@ class DataselectRequest(object):
     Parse, validate, and expose a dataselect request.
     """
 
-    #: Endpoint (eg. "query", "queryauth", "version", "application.wadl")
+    #: Endpoint (eg. "query")
     endpoint = None
     #: Full URL path (eg. "/fdsnws/dataselect/1/query")
     path = None
@@ -114,8 +114,8 @@ class DataselectRequest(object):
         self.path = req.path.lower()
         self.endpoint = self.get_path_endpoint(self.path)
         logger.debug("Request endpoint: %s" % self.endpoint)
-        # Don't parse the body or query arguments unless this is a query request
-        if self.endpoint in ('query', 'queryauth',):
+        # Only parse the body or query arguments for endpoints that need them
+        if self.endpoint in ('query', 'queryauth', 'extent', ):
             if not body:
                 body = self.parse_query(req.query)
                 logger.debug("GET request translated to request body:\n%s" % body)
@@ -169,7 +169,7 @@ class DataselectRequest(object):
                         raise QueryError("Unsupported format: '%s'" % v)
                 sql_qry[k] = v
 
-        if len(required) > 0:
+        if len(required) > 0 and self.endpoint != 'extent':
             raise QueryError("Missing parameter%s: %s" % ("" if len(required) == 1 else "s", ", ".join(required)))
 
         # Build a string for the matching request as a POST body

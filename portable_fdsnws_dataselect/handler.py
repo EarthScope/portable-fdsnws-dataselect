@@ -89,7 +89,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         logger.error("Code:%d Error:%s Request:%s" % (code, err_msg, self.path))
 
     def format_host(self, query=''):
-        '''Return the fuill URL for this host, w/ query (if provided)
+        '''Return the full URL for this host, w/ query (if provided)
         '''
         path = urlparse(self.path).path
         return "http://%s:%d%s%s" % (self.server.server_name, self.server.server_port, path, query)
@@ -140,6 +140,18 @@ Service: fdsnws-dataselect  version %d.%d.%d
         elif request.endpoint == 'application.wadl':
             # TODO
             self.return_error(404, "wadl")
+            return
+        elif request.endpoint == 'extent':
+            extent_rows = self.fetch_extent_rows(request.query_rows)
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+
+            for row in extent_rows:
+                loc = row[2] if row[2] != '' else '--'
+                self.wfile.write(bytes("{0:<8s}{1:<8s}{2:<8s}{3:<8s}{4:<28s}{5:<28s}{6:<20s}\n".
+                                       format(row[0],row[1],loc,row[3],row[4],row[5],row[6]), "utf8"))
             return
 
         request_time = time.time()
@@ -360,3 +372,79 @@ Service: fdsnws-dataselect  version %d.%d.%d
         resolvedrows = cursor.execute("SELECT COUNT(*) FROM {0}".format(requesttable)).fetchone()[0]
 
         cursor.execute("DROP TABLE {0}".format(requesttable_orig))
+
+    def fetch_extent_rows(self, query_rows):
+        '''
+        Fetch extent rows matching specified request
+
+        `query_rows`: List of tuples containing (net,sta,loc,chan,start,end)
+
+        Request elements may contain '?' and '*' wildcards.  The start and
+        end elements can be a single '*' if not a date-time string.
+
+        Return rows as list of tuples containing:
+        (network,station,location,channel,earliest,latest,updated)
+        '''
+        extent_rows = []
+        my_uuid = uuid.uuid4().hex
+        request_table = "request_%s" % my_uuid
+
+        try:
+            conn = sqlite3.connect(self.server.params['dbfile'], 10.0)
+        except Exception as err:
+            raise ValueError(str(err))
+
+        cur = conn.cursor()
+
+        # Store temporary table(s) in memory
+        try:
+            cur.execute("PRAGMA temp_store=MEMORY")
+        except Exception as err:
+            raise ValueError(str(err))
+
+        # Create temporary table and load request
+        try:
+            cur.execute("CREATE TEMPORARY TABLE {0} "
+                        "(network TEXT, station TEXT, location TEXT, channel TEXT)".
+                        format(request_table))
+
+            for req in query_rows:
+                # Replace "--" location ID request alias with true empty value
+                if req[2] == "--":
+                    req[2] = ""
+
+                cur.execute("INSERT INTO {0} (network,station,location,channel) "
+                            "VALUES (?,?,?,?) ".format(request_table), req[:4])
+
+        except Exception as err:
+            import traceback
+            traceback.print_exc()
+            raise ValueError(str(err))
+
+        # Determine if all_channel_summary table exists
+        cur.execute("SELECT count(*) FROM sqlite_master WHERE type='table' and name='all_channel_summary'")
+        acs_present = cur.fetchone()[0]
+
+        if acs_present:
+            # Select extents by joining with all_channel_summary
+            try:
+                sql = ("SELECT s.network,s.station,s.location,s.channel,"
+                       "s.earliest,s.latest,s.updt "
+                       "FROM all_channel_summary s, {0} r "
+                       "WHERE "
+                       "  (r.network='*' OR s.network GLOB r.network) "
+                       "  AND (r.station='*' OR s.station GLOB r.station) "
+                       "  AND (r.location='*' OR s.location GLOB r.location) "
+                       "  AND (r.channel='*' OR s.channel GLOB r.channel) ".
+                       format(request_table))
+                cur.execute(sql)
+
+            except Exception as err:
+                raise ValueError(str(err))
+
+            extent_rows = cur.fetchall()
+
+            cur.execute("DROP TABLE {0}".format(request_table))
+            conn.close()
+
+        return extent_rows
