@@ -5,6 +5,7 @@ Data extraction and transfer from Miniseed files
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 from future.builtins import *  # NOQA
+from collections import namedtuple
 from obspy.core import UTCDateTime
 import bisect
 from portable_fdsnws_dataselect.msriterator import MSR_iterator
@@ -201,16 +202,15 @@ class MiniseedDataExtractor(object):
         # Note: accumulated estimate of output bytes will be equal to or higher than actual output
         total_bytes = 0
         request_rows = []
+        Request = namedtuple('Request',['src_name','file_name','start_time','end_time',
+                                        'trim_info','section_bytes','sample_rate'])
         if self.request_limit > 0:
             try:
                 for row in index_rows:
-                    src_name = "_".join(row[:4])
-                    sample_rate = row[7]
                     file_name = row[8]
-                    section_bytes = row[10]
-                    stime = UTCDateTime(row[19])
-                    etime = UTCDateTime(row[20])
-                    trim_info = self.handle_trimming(stime, etime, row)
+                    start_time = UTCDateTime(row[19])
+                    end_time = UTCDateTime(row[20])
+                    trim_info = self.handle_trimming(start_time, end_time, row)
                     total_bytes += trim_info[1][1] - trim_info[0][1]
                     if total_bytes > self.request_limit:
                         raise RequestLimitExceededError("Result exceeds limit of %d bytes" % self.request_limit)
@@ -218,7 +218,13 @@ class MiniseedDataExtractor(object):
                         file_name = self.dp_replace_re.sub(self.dp_replace_sub, file_name)
                     if not os.path.exists(file_name):
                         raise Exception("Data file does not exist: %s" % file_name)
-                    request_rows.append([src_name,file_name,stime,etime,trim_info,section_bytes,sample_rate])
+                    request_rows.append(Request(src_name="_".join(row[:4]),
+                                                file_name = file_name,
+                                                start_time = start_time,
+                                                end_time = end_time,
+                                                trim_info = trim_info,
+                                                section_bytes = row[10],
+                                                sample_rate = row[7]))
             except Exception as err:
                 import traceback
                 traceback.print_exc()
@@ -230,27 +236,24 @@ class MiniseedDataExtractor(object):
 
         # Get & return the actual data
         for row in request_rows:
-            # row:
-            # 0:src_name, 1:file_name, 2:UTCDateTime(stime), 3:UTCDateTime(etime)
-            # 4:trim_info, 5:section_bytes, 6:sample_rate
-            trim_info = row[4];
+            logger.debug ("Extracting %s (%s - %s) from %s" % (row.src_name, row.start_time, row.end_time, row.file_name))
 
             # Iterate through records in section if only part of the section is needed
-            if trim_info[0][2] or trim_info[1][2]:
+            if row.trim_info[0][2] or row.trim_info[1][2]:
 
-                for msri in MSR_iterator(filename=row[1], startoffset=trim_info[0][1], dataflag=False):
+                for msri in MSR_iterator(filename=row.file_name, startoffset=row.trim_info[0][1], dataflag=False):
                     offset = msri.get_offset()
 
                     # Done if we are beyond end offset
-                    if offset >= trim_info[1][1]:
+                    if offset >= row.trim_info[1][1]:
                         break
 
-                    yield MSRIDataSegment(msri, row[6], row[2], row[3], row[0])
+                    yield MSRIDataSegment(msri, row.sample_rate, row.start_time, row.end_time, row.src_name)
 
                     # Check for passing end offset
-                    if (offset + msri.msr.contents.reclen) >= trim_info[1][1]:
+                    if (offset + msri.msr.contents.reclen) >= row.trim_info[1][1]:
                         break
 
             # Otherwise, return the entire section
             else:
-                yield FileDataSegment(file_name, trim_info[0][1], row[5], row[0])
+                yield FileDataSegment(row.file_name, row.trim_info[0][1], row.section_bytes, row.src_name)
