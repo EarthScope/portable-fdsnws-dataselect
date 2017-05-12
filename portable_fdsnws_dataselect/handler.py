@@ -174,6 +174,9 @@ Service: fdsnws-dataselect  version %d.%d.%d
             self.send_header('Content-Type', 'text/plain')
             self.end_headers()
 
+            self.wfile.write(bytes("#{0:<7s}{1:<8s}{2:<8s}{3:<8s}{4:<28s}{5:<28s}{6:<20s}\n".
+                                   format("Net", "Sta", "Loc", "Chan", "Earliest", "Latest", "Updated"), "utf8"))
+
             for row in summary_rows:
                 loc = row[2] if row[2] != '' else '--'
                 self.wfile.write(bytes("{0:<8s}{1:<8s}{2:<8s}{3:<8s}{4:<28s}{5:<28s}{6:<20s}\n".
