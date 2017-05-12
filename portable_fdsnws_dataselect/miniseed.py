@@ -202,8 +202,8 @@ class MiniseedDataExtractor(object):
         # Note: accumulated estimate of output bytes will be equal to or higher than actual output
         total_bytes = 0
         request_rows = []
-        Request = namedtuple('Request',['src_name','file_name','start_time','end_time',
-                                        'trim_info','section_bytes','sample_rate'])
+        Request = namedtuple('Request', ['src_name', 'file_name', 'start_time', 'end_time',
+                                         'trim_info', 'section_bytes', 'sample_rate'])
         if self.request_limit > 0:
             try:
                 for row in index_rows:
@@ -219,12 +219,12 @@ class MiniseedDataExtractor(object):
                     if not os.path.exists(file_name):
                         raise Exception("Data file does not exist: %s" % file_name)
                     request_rows.append(Request(src_name="_".join(row[:4]),
-                                                file_name = file_name,
-                                                start_time = start_time,
-                                                end_time = end_time,
-                                                trim_info = trim_info,
-                                                section_bytes = row[10],
-                                                sample_rate = row[7]))
+                                                file_name=file_name,
+                                                start_time=start_time,
+                                                end_time=end_time,
+                                                trim_info=trim_info,
+                                                section_bytes=row[10],
+                                                sample_rate=row[7]))
             except Exception as err:
                 import traceback
                 traceback.print_exc()
@@ -236,7 +236,7 @@ class MiniseedDataExtractor(object):
 
         # Get & return the actual data
         for row in request_rows:
-            logger.debug ("Extracting %s (%s - %s) from %s" % (row.src_name, row.start_time, row.end_time, row.file_name))
+            logger.debug("Extracting %s (%s - %s) from %s" % (row.src_name, row.start_time, row.end_time, row.file_name))
 
             # Iterate through records in section if only part of the section is needed
             if row.trim_info[0][2] or row.trim_info[1][2]:

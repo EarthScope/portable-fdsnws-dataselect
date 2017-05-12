@@ -88,6 +88,34 @@ Service: fdsnws-dataselect  version %d.%d.%d
         self.wfile.write(bytes(msg, "utf8"))
         logger.error("Code:%d Error:%s Request:%s" % (code, err_msg, self.path))
 
+    def return_version(self):
+        """
+        Return service version information
+        """
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        message = "%d.%d.%d\n" % version
+        self.wfile.write(bytes(message, "utf8"))
+
+    def return_wadl(self):
+        """
+        Return application.wadl
+        """
+        self.send_response(200)
+        self.send_header('Content-type', 'application/xml')
+        self.end_headers()
+        server_port = ""
+        if self.server.server_port != 80:
+            server_port = ":%d" % self.server.server_port
+        base_url = "http://%s%s/fdsnws/dataselect/%d/" % (
+            self.server.server_name, server_port, version[0]
+        )
+        with open(os.path.join(os.path.dirname(pkg_path), 'docs', 'application.wadl'), 'r') as f:
+            # Note we need to substitute the base URL into the wadl
+            message = f.read() % base_url
+            self.wfile.write(bytes(message, "utf8"))
+
     def format_host(self, query=''):
         '''Return the full URL for this host, w/ query (if provided)
         '''
@@ -96,7 +124,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
     # Direct log messages to common logging
     def log_message(self, format, *args):
-        logger.info("%s %s" % (self.address_string(),format%args))
+        logger.info("%s %s" % (self.address_string(), format % args))
 
     # GET
     def do_GET(self):
@@ -134,12 +162,10 @@ Service: fdsnws-dataselect  version %d.%d.%d
         '''
 
         if request.endpoint == 'version':
-            # TODO
-            self.return_error(404, "Version")
+            self.return_version()
             return
         elif request.endpoint == 'application.wadl':
-            # TODO
-            self.return_error(404, "wadl")
+            self.return_wadl()
             return
         elif request.endpoint == 'extent':
             extent_rows = self.fetch_extent_rows(request.query_rows)
@@ -151,8 +177,21 @@ Service: fdsnws-dataselect  version %d.%d.%d
             for row in extent_rows:
                 loc = row[2] if row[2] != '' else '--'
                 self.wfile.write(bytes("{0:<8s}{1:<8s}{2:<8s}{3:<8s}{4:<28s}{5:<28s}{6:<20s}\n".
-                                       format(row[0],row[1],loc,row[3],row[4],row[5],row[6]), "utf8"))
+                                       format(row[0], row[1], loc, row[3], row[4], row[5], row[6]), "utf8"))
             return
+        elif request.endpoint == 'queryauth':
+            key = self.server.get_auth_key()
+            if self.headers.get('Authorization') is None:
+                # Need authorization
+                self.do_AUTHHEAD()
+                self.wfile.write(bytes('No auth header received', "utf8"))
+                return
+            elif self.headers.get('Authorization') != 'Basic ' + str(key):
+                # Improper authorization sent; inform client
+                self.do_AUTHHEAD()
+                self.wfile.write(bytes('Invalid credentials', "utf8"))
+                return
+            # Otherwise, authentication is valid and we can fall through to the normal request handling
 
         request_time = time.time()
         request_time_str = UTCDateTime(int(request_time)).isoformat() + "Z"
@@ -235,7 +274,6 @@ Service: fdsnws-dataselect  version %d.%d.%d
          filename,byteoffset,bytes,hash,timeindex,timespans,timerates,
          format,filemodtime,updated,scanned,requeststart,requestend)
         '''
-        index_rows = []
         my_uuid = uuid.uuid4().hex
         request_table = "request_%s" % my_uuid
 
