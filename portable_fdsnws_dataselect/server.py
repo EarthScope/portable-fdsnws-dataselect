@@ -151,6 +151,7 @@ def main():
 
         log_config = {
             'version': 1,
+            'disable_existing_loggers': False,
             'formatters': {
                 'default': {'format': '%(asctime)s - %(levelname)s - %(message)s',
                             'datefmt': '%Y-%m-%d %H:%M:%S'},
@@ -166,7 +167,10 @@ def main():
                 }
             },
             'loggers': {
-                'default': {'level': level_name, 'handlers': ['file']}
+                '': {'handlers': ['file'],
+                     'level': level_name,
+                     'propagate': True,
+                }
             }
         }
         logging.config.dictConfig(log_config)
@@ -175,7 +179,7 @@ def main():
         # If no log file defined set log level for no output
         logging.getLogger().setLevel(99)
 
-    logger = logging.getLogger('default')
+    logger = logging.getLogger(__name__)
 
     # Validate, set defaults and map config file options to params
     params = dict()
