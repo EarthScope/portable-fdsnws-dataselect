@@ -225,6 +225,7 @@ class MiniseedDataExtractor(object):
                                                 trim_info=trim_info,
                                                 section_bytes=row[10],
                                                 sample_rate=row[7]))
+                    logger.debug("REQUEST: src=%s, file=%s, bytes=%s, rate:%s" % ("_".join(row[:4]), file_name, row[10], row[7]))
             except Exception as err:
                 import traceback
                 traceback.print_exc()

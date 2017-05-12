@@ -206,6 +206,8 @@ Service: fdsnws-dataselect  version %d.%d.%d
         total_bytes = 0
         src_bytes = {}
 
+        logger.debug("Starting data return")
+
         try:
             # Extract the data, writing each returned segment to the response
             for data_segment in self.server.data_extractor.extract_data(index_rows):
@@ -235,18 +237,18 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
         duration = time.time() - request_time
 
-        # Gather client information, the reverse DNS lookup could potentially take some time
-        client_ip = self.address_string()
-        try:
-            client_host = socket.gethostbyaddr(client_ip)[0]
-        except Exception:
-            client_host = client_ip
-        user_agent = self.headers.get('User-Agent', '?')
-
         # Write shipment log
         if self.server.params['shiplogdir']:
+            # Gather client information, the reverse DNS lookup could potentially take some time
+            client_ip = self.address_string()
+            try:
+                client_host = socket.gethostbyaddr(client_ip)[0]
+            except Exception:
+                client_host = client_ip
+            user_agent = self.headers.get('User-Agent', '?')
             shiplogfile = os.path.join(self.server.params['shiplogdir'],
                                        time.strftime("shipment-%Y-%m-%dZ", time.gmtime(request_time)))
+            logger.debug("Writing shipment log to %s" % shiplogfile)
 
             with open(shiplogfile, "a") as f:
                 f.write("START CLIENT %s [%s] @ %s [%s]\n" % (client_host, client_ip, request_time_str, user_agent))
@@ -276,6 +278,8 @@ Service: fdsnws-dataselect  version %d.%d.%d
         '''
         my_uuid = uuid.uuid4().hex
         request_table = "request_%s" % my_uuid
+
+        logger.debug("Opening SQLite database for index rows: %s" % self.server.params['dbfile'])
 
         try:
             conn = sqlite3.connect(self.server.params['dbfile'], 10.0)
@@ -361,6 +365,8 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
         index_rows = cur.fetchall()
 
+        logger.debug ("Fetched %d index rows" % len(index_rows))
+
         cur.execute("DROP TABLE {0}".format(request_table))
         conn.close()
 
@@ -409,7 +415,11 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
         resolvedrows = cursor.execute("SELECT COUNT(*) FROM {0}".format(requesttable)).fetchone()[0]
 
+        logger.debug("Resolved request with all_channel_summary into %d rows" % resolvedrows)
+
         cursor.execute("DROP TABLE {0}".format(requesttable_orig))
+
+        return resolvedrows
 
     def fetch_summary_rows(self, query_rows):
         '''
@@ -426,6 +436,8 @@ Service: fdsnws-dataselect  version %d.%d.%d
         summary_rows = []
         my_uuid = uuid.uuid4().hex
         request_table = "request_%s" % my_uuid
+
+        logger.debug("Opening SQLite database for summary rows: %s" % self.server.params['dbfile'])
 
         try:
             conn = sqlite3.connect(self.server.params['dbfile'], 10.0)
@@ -481,6 +493,8 @@ Service: fdsnws-dataselect  version %d.%d.%d
                 raise ValueError(str(err))
 
             summary_rows = cur.fetchall()
+
+            logger.debug ("Fetched %d summary rows" % len(index_rows))
 
             cur.execute("DROP TABLE {0}".format(request_table))
             conn.close()
