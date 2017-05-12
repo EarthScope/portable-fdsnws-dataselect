@@ -352,7 +352,6 @@ Service: fdsnws-dataselect  version %d.%d.%d
                    "  AND ts.starttime <= r.endtime "
                    "  AND ts.starttime >= datetime(r.starttime,'-{3} days') "
                    "  AND ts.endtime >= r.starttime "
-                   "ORDER BY ts.network,ts.station,ts.location,ts.channel"
                    .format(self.server.params['index_table'],
                            request_table, "GLOB" if wildcards else "=",
                            self.server.params['maxsectiondays']))
@@ -365,7 +364,10 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
         index_rows = cur.fetchall()
 
-        logger.debug ("Fetched %d index rows" % len(index_rows))
+        # Sort results in application (ORDER BY in SQL triggers bad index usage)
+        index_rows.sort()
+
+        logger.debug("Fetched %d index rows" % len(index_rows))
 
         cur.execute("DROP TABLE {0}".format(request_table))
         conn.close()
@@ -478,7 +480,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         if acs_present:
             # Select summarys by joining with all_channel_summary
             try:
-                sql = ("SELECT s.network,s.station,s.location,s.channel,"
+                sql = ("SELECT DISTINCT s.network,s.station,s.location,s.channel,"
                        "s.earliest,s.latest,s.updt "
                        "FROM all_channel_summary s, {0} r "
                        "WHERE "
@@ -494,7 +496,10 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
             summary_rows = cur.fetchall()
 
-            logger.debug ("Fetched %d summary rows" % len(index_rows))
+            # Sort results in application (ORDER BY in SQL triggers bad index usage)
+            summary_rows.sort()
+
+            logger.debug ("Fetched %d summary rows" % len(summary_rows))
 
             cur.execute("DROP TABLE {0}".format(request_table))
             conn.close()
