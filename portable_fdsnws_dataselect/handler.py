@@ -167,14 +167,14 @@ Service: fdsnws-dataselect  version %d.%d.%d
         elif request.endpoint == 'application.wadl':
             self.return_wadl()
             return
-        elif request.endpoint == 'extent':
-            extent_rows = self.fetch_extent_rows(request.query_rows)
+        elif request.endpoint == 'summary':
+            summary_rows = self.fetch_summary_rows(request.query_rows)
 
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain')
             self.end_headers()
 
-            for row in extent_rows:
+            for row in summary_rows:
                 loc = row[2] if row[2] != '' else '--'
                 self.wfile.write(bytes("{0:<8s}{1:<8s}{2:<8s}{3:<8s}{4:<28s}{5:<28s}{6:<20s}\n".
                                        format(row[0], row[1], loc, row[3], row[4], row[5], row[6]), "utf8"))
@@ -411,9 +411,9 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
         cursor.execute("DROP TABLE {0}".format(requesttable_orig))
 
-    def fetch_extent_rows(self, query_rows):
+    def fetch_summary_rows(self, query_rows):
         '''
-        Fetch extent rows matching specified request
+        Fetch summary rows matching specified request
 
         `query_rows`: List of tuples containing (net,sta,loc,chan,start,end)
 
@@ -423,7 +423,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         Return rows as list of tuples containing:
         (network,station,location,channel,earliest,latest,updated)
         '''
-        extent_rows = []
+        summary_rows = []
         my_uuid = uuid.uuid4().hex
         request_table = "request_%s" % my_uuid
 
@@ -464,7 +464,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         acs_present = cur.fetchone()[0]
 
         if acs_present:
-            # Select extents by joining with all_channel_summary
+            # Select summarys by joining with all_channel_summary
             try:
                 sql = ("SELECT s.network,s.station,s.location,s.channel,"
                        "s.earliest,s.latest,s.updt "
@@ -480,9 +480,9 @@ Service: fdsnws-dataselect  version %d.%d.%d
             except Exception as err:
                 raise ValueError(str(err))
 
-            extent_rows = cur.fetchall()
+            summary_rows = cur.fetchall()
 
             cur.execute("DROP TABLE {0}".format(request_table))
             conn.close()
 
-        return extent_rows
+        return summary_rows

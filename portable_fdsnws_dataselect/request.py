@@ -49,7 +49,7 @@ DEFAULT_PARAMS = {
 REQUIRED_PARAMS = ('starttime', 'endtime',)
 
 #: Valid endpoints
-QUERY_ENDPOINTS = ('query', 'queryauth', 'extent', 'version', 'application.wadl',)
+QUERY_ENDPOINTS = ('query', 'queryauth', 'summary', 'version', 'application.wadl',)
 
 
 def parse_datetime(timestring):
@@ -115,7 +115,7 @@ class DataselectRequest(object):
         self.endpoint = self.get_path_endpoint(self.path)
         logger.debug("Request endpoint: %s" % self.endpoint)
         # Only parse the body or query arguments for endpoints that need them
-        if self.endpoint in ('query', 'queryauth', 'extent', ):
+        if self.endpoint in ('query', 'queryauth', 'summary', ):
             if not body:
                 body = self.parse_query(req.query)
                 logger.debug("GET request translated to request body:\n%s" % body)
@@ -169,7 +169,7 @@ class DataselectRequest(object):
                         raise QueryError("Unsupported format: '%s'" % v)
                 sql_qry[k] = v
 
-        if len(required) > 0 and self.endpoint != 'extent':
+        if len(required) > 0 and self.endpoint != 'summary':
             raise QueryError("Missing parameter%s: %s" % ("" if len(required) == 1 else "s", ", ".join(required)))
 
         # Build a string for the matching request as a POST body
