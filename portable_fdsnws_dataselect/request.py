@@ -113,12 +113,12 @@ class DataselectRequest(object):
         req = urlparse(path)
         self.path = req.path.lower()
         self.endpoint = self.get_path_endpoint(self.path)
-        logger.info("Request endpoint: %s" % self.endpoint)
+        logger.debug("Request endpoint: %s" % self.endpoint)
         # Don't parse the body or query arguments unless this is a query request
         if self.endpoint in ('query', 'queryauth',):
             if not body:
                 body = self.parse_query(req.query)
-                logger.info("GET request translated to request body:\n%s" % body)
+                logger.debug("GET request translated to request body:\n%s" % body)
             self.parse_request(body)
 
     def get_path_endpoint(self, path):

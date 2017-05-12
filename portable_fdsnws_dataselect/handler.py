@@ -94,11 +94,15 @@ Service: fdsnws-dataselect  version %d.%d.%d
         path = urlparse(self.path).path
         return "http://%s:%d%s%s" % (self.server.server_name, self.server.server_port, path, query)
 
+    # Direct log messages to common logging
+    def log_message(self, format, *args):
+        logger.info("%s %s" % (self.address_string(),format%args))
+
     # GET
     def do_GET(self):
         '''Handle a GET request
         '''
-        logger.info("GET: %s" % self.path)
+        logger.debug("GET: %s" % self.path)
 
         try:
             request = DataselectRequest(self.path)
@@ -113,10 +117,11 @@ Service: fdsnws-dataselect  version %d.%d.%d
     def do_POST(self):
         '''Handle a POST request
         '''
-        logger.info("POST: %s" % self.path)
+        logger.debug("POST: %s" % self.path)
 
         request_text = self.rfile.read(int(self.headers['Content-Length'])).decode("utf-8")
-        logger.info("POST query:\n%s" % request_text)
+
+        logger.debug("POST query:\n%s" % request_text)
 
         try:
             request = DataselectRequest(self.path, request_text)
