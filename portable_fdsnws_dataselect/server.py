@@ -14,8 +14,9 @@ import base64
 import sys
 import configparser
 from portable_fdsnws_dataselect.miniseed import MiniseedDataExtractor
+from logging import getLogger
 
-logger = None
+logger = getLogger(__name__)
 
 
 class ThreadPoolMixIn(ThreadingMixIn):
@@ -249,8 +250,6 @@ def main():
         # If no log file defined set log level for no output
         logging.getLogger().setLevel(99)
 
-    logger = logging.getLogger(__name__)
-
     # Validate, set defaults and map config file options to params
     params = dict()
 
@@ -368,6 +367,15 @@ def main():
             sys.exit(1)
     else:
         params['maxsectiondays'] = 10
+
+    # Static document root
+    params['docroot'] = config.get('server', 'docroot', fallback='')
+
+    # Show directory listings?
+    try:
+        params['show_directories'] = config.getboolean('server', 'show_directories', fallback=False)
+    except ValueError:
+        params['show_directories'] = False
 
     # Shipment logging directory
     if config.has_option('logging', 'shiplogdir'):

@@ -98,7 +98,7 @@ class DataselectRequest(object):
 
     #: Endpoint (eg. "query")
     endpoint = None
-    #: Full URL path (eg. "/fdsnws/dataselect/1/query")
+    #: Path relative to the service prefix (eg. "/fdsnws/dataselect/1/query")
     path = None
     #: Time/channel constraints in the form of POST-style lines
     query_rows = None

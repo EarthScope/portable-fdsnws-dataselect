@@ -8,25 +8,19 @@ from future.builtins import *  # NOQA
 import sqlite3
 import re
 import datetime
-from obspy import read as mseed_read
 from obspy.core.utcdatetime import UTCDateTime
 from obspy.core.stream import Stream
-import bisect
 import uuid
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import os.path
 import time
-
-import ctypes
-from portable_fdsnws_dataselect.msriterator import MSR_iterator
-
 from portable_fdsnws_dataselect import pkg_path, version
 from logging import getLogger
 from portable_fdsnws_dataselect.request import DataselectRequest, QueryError, NonQueryURLError
-from io import BytesIO
 import socket
 from portable_fdsnws_dataselect.miniseed import NoDataError, RequestLimitExceededError
+from future.backports.http.server import SimpleHTTPRequestHandler
 
 logger = getLogger(__name__)
 
@@ -46,7 +40,9 @@ http_msgs = {
 
 
 # HTTPRequestHandler class
-class HTTPServer_RequestHandler(BaseHTTPRequestHandler):
+class HTTPServer_RequestHandler(SimpleHTTPRequestHandler):
+
+    prefix = '/fdsnws/dataselect/%d/' % version[0]
 
     def do_HEAD(self):
         ''' Send response code & header for normal/successful response '''
@@ -80,7 +76,7 @@ Request Submitted:
 
 Service version:
 Service: fdsnws-dataselect  version %d.%d.%d
-''' % (code, http_msgs[code], err_msg, '/fdsnws/dataselect/%d/' % version[0], self.format_host(), datetime.datetime.now().isoformat(), version[0], version[1], version[2])
+''' % (code, http_msgs[code], err_msg, self.prefix, self.format_host(), datetime.datetime.now().isoformat(), version[0], version[1], version[2])
         self.send_response(code)
         self.send_header('Content-type', 'text/plain')
         self.send_header('Connection', 'close')
@@ -108,8 +104,8 @@ Service: fdsnws-dataselect  version %d.%d.%d
         server_port = ""
         if self.server.server_port != 80:
             server_port = ":%d" % self.server.server_port
-        base_url = "http://%s%s/fdsnws/dataselect/%d/" % (
-            self.server.server_name, server_port, version[0]
+        base_url = "http://%s%s%s" % (
+            self.server.server_name, server_port, self.prefix
         )
         with open(os.path.join(os.path.dirname(pkg_path), 'docs', 'application.wadl'), 'r') as f:
             # Note we need to substitute the base URL into the wadl
@@ -126,7 +122,6 @@ Service: fdsnws-dataselect  version %d.%d.%d
     def log_message(self, format, *args):
         logger.info("%s %s" % (self.address_string(), format % args))
 
-    # GET
     def do_GET(self):
         '''Handle a GET request
         '''
@@ -137,11 +132,9 @@ Service: fdsnws-dataselect  version %d.%d.%d
             self.common_process(request)
         except QueryError as e:
             self.return_error(400, str(e))
-        except NonQueryURLError as e:
-            # Fall back to the basic file-based handler for non-query requests
-            self.return_error(404, str(e))
+        except NonQueryURLError:
+            self.handle_nonquery()
 
-    # POST
     def do_POST(self):
         '''Handle a POST request
         '''
@@ -156,6 +149,8 @@ Service: fdsnws-dataselect  version %d.%d.%d
             self.common_process(request)
         except QueryError as e:
             self.return_error(400, str(e))
+        except NonQueryURLError:
+            self.return_error(404, "File not found")
 
     def common_process(self, request):
         '''Common processing for both GET and POST requests
@@ -508,3 +503,44 @@ Service: fdsnws-dataselect  version %d.%d.%d
             conn.close()
 
         return summary_rows
+
+    def handle_nonquery(self):
+        """
+        Handle a request that doesn't correspond to any service endpoint.
+        """
+        # If the request was totally outside the service prefix, redirect to the prefix
+        request_path = urlparse(self.path).path
+        if not request_path.startswith(self.prefix):
+            self.send_response(301)
+            self.send_header("Location", self.prefix)
+            self.end_headers()
+        # Otherwise, fall back to handling this using `SimpleHTTPRequestHandler`
+        else:
+            # This is the guts of `SimpleHTTPRequestHandler.do_GET`
+            f = self.send_head()
+            if f:
+                self.copyfile(f, self.wfile)
+                f.close()
+
+    def translate_path(self, path):
+        """
+        This is part of the `SimpleHTTPRequestHandler` API, to translate a URL path to a filesystem path.
+
+        We want to strip off the URL prefix (ie. "/fdsnws/dataselect/1/") and make the rest of the URL
+        path relative to the configured docroot.
+        """
+        docroot = self.server.params['docroot'] or os.path.join(os.path.dirname(pkg_path), "docs")
+        relative_paths = self.path[len(self.prefix):].split('/')
+        return os.path.join(docroot, *relative_paths)
+
+    def list_directory(self, path):
+        """
+        By default, `SimpleHTTPRequestHandler` will list the contents of a directory if there isn't
+        an index file. This is a security risk, so this will return a 404 instead unless specifically
+        configured.
+        """
+        if self.server.params['show_directories']:
+            return super(HTTPServer_RequestHandler, self).list_directory(path)
+        else:
+            self.send_error(404, "No permission to list directory")
+            return None
