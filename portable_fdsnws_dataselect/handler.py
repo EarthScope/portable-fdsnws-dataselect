@@ -311,9 +311,13 @@ Service: fdsnws-dataselect  version %d.%d.%d
             traceback.print_exc()
             raise ValueError(str(err))
 
-        # Determine if all_channel_summary table exists
-        cur.execute("SELECT count(*) FROM sqlite_master WHERE type='table' and name='all_channel_summary'")
-        acs_present = cur.fetchone()[0]
+        # Determine if summary table exists, default to index_summary
+        if 'summary_table' in self.server.params:
+            summary_table = self.server.params['summary_table']
+        else:
+            summary_table = "{0}_summary".format(self.server.params['index_table'])
+        cur.execute("SELECT count(*) FROM sqlite_master WHERE type='table' and name='{0}'".format(summary_table))
+        summary_present = cur.fetchone()[0]
 
         wildcards = False
         for req in query_rows:
@@ -323,11 +327,11 @@ Service: fdsnws-dataselect  version %d.%d.%d
                     break
 
         if wildcards:
-            # Resolve wildcards using all_channel_summary if present to:
+            # Resolve wildcards using summary if present to:
             # a) resolve wildcards, allows use of '=' operator and table index
             # b) reduce index table search to channels that are known included
-            if acs_present:
-                self.resolve_request(cur, request_table)
+            if summary_present:
+                self.resolve_request(cur, summary_table, request_table)
                 wildcards = False
             # Replace wildcarded starttime and endtime with extreme date-times
             else:
@@ -372,52 +376,54 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
         return index_rows
 
-    def resolve_request(self, cursor, requesttable):
-        '''Resolve request table using all_channel_summary
+    def resolve_request(self, cursor, summary_table, request_table):
+        '''Resolve request table using summary
         `cursor`: Database cursor
-        `requesttable`: request table to resolve
+        `summary_table`: summary table to resolve with
+        `request_table`: request table to resolve
         Resolve any '?' and '*' wildcards in the specified request table.
-        The original table is renamed, rebuilt with a join to all_channel_summary
+        The original table is renamed, rebuilt with a join to summary
         and then original table is then removed.
         '''
 
-        requesttable_orig = requesttable + "_orig"
+        request_table_orig = request_table + "_orig"
 
         # Rename request table
         try:
-            cursor.execute("ALTER TABLE {0} RENAME TO {1}".format(requesttable, requesttable_orig))
+            cursor.execute("ALTER TABLE {0} RENAME TO {1}".format(request_table, request_table_orig))
         except Exception as err:
             raise ValueError(str(err))
 
-        # Create resolved request table by joining with all_channel_summary
+        # Create resolved request table by joining with summary
         try:
             sql = ("CREATE TEMPORARY TABLE {0} "
                    "(network TEXT, station TEXT, location TEXT, channel TEXT, "
-                   "starttime TEXT, endtime TEXT) ".format(requesttable))
+                   "starttime TEXT, endtime TEXT) ".format(request_table))
             cursor.execute(sql)
 
             sql = ("INSERT INTO {0} (network,station,location,channel,starttime,endtime) "
                    "SELECT s.network,s.station,s.location,s.channel,"
                    "CASE WHEN r.starttime='*' THEN s.earliest ELSE r.starttime END,"
                    "CASE WHEN r.endtime='*' THEN s.latest ELSE r.endtime END "
-                   "FROM all_channel_summary s, {1} r "
+                   "FROM {1} s, {2} r "
                    "WHERE "
                    "  (r.starttime='*' OR r.starttime <= s.latest) "
                    "  AND (r.endtime='*' OR r.endtime >= s.earliest) "
                    "  AND (r.network='*' OR s.network GLOB r.network) "
                    "  AND (r.station='*' OR s.station GLOB r.station) "
                    "  AND (r.location='*' OR s.location GLOB r.location) "
-                   "  AND (r.channel='*' OR s.channel GLOB r.channel) ".format(requesttable, requesttable_orig))
+                   "  AND (r.channel='*' OR s.channel GLOB r.channel) ".
+                   format(request_table, summary_table, request_table_orig))
             cursor.execute(sql)
 
         except Exception as err:
             raise ValueError(str(err))
 
-        resolvedrows = cursor.execute("SELECT COUNT(*) FROM {0}".format(requesttable)).fetchone()[0]
+        resolvedrows = cursor.execute("SELECT COUNT(*) FROM {0}".format(request_table)).fetchone()[0]
 
-        logger.debug("Resolved request with all_channel_summary into %d rows" % resolvedrows)
+        logger.debug("Resolved request with summary into %d rows" % resolvedrows)
 
-        cursor.execute("DROP TABLE {0}".format(requesttable_orig))
+        cursor.execute("DROP TABLE {0}".format(request_table_orig))
 
         return resolvedrows
 
@@ -471,22 +477,26 @@ Service: fdsnws-dataselect  version %d.%d.%d
             traceback.print_exc()
             raise ValueError(str(err))
 
-        # Determine if all_channel_summary table exists
-        cur.execute("SELECT count(*) FROM sqlite_master WHERE type='table' and name='all_channel_summary'")
-        acs_present = cur.fetchone()[0]
+        # Determine if summary table exists, default to index_summary
+        if 'summary_table' in self.server.params:
+            summary_table = self.server.params['summary_table']
+        else:
+            summary_table = "{0}_summary".format(self.server.params['index_table'])
+        cur.execute("SELECT count(*) FROM sqlite_master WHERE type='table' and name='{0}'".format(summary_table))
+        summary_present = cur.fetchone()[0]
 
-        if acs_present:
-            # Select summarys by joining with all_channel_summary
+        if summary_present:
+            # Select summary rows by joining with summary table
             try:
                 sql = ("SELECT DISTINCT s.network,s.station,s.location,s.channel,"
                        "s.earliest,s.latest,s.updt "
-                       "FROM all_channel_summary s, {0} r "
+                       "FROM {0} s, {1} r "
                        "WHERE "
                        "  (r.network='*' OR s.network GLOB r.network) "
                        "  AND (r.station='*' OR s.station GLOB r.station) "
                        "  AND (r.location='*' OR s.location GLOB r.location) "
                        "  AND (r.channel='*' OR s.channel GLOB r.channel) ".
-                       format(request_table))
+                       format(summary_table, request_table))
                 cur.execute(sql)
 
             except Exception as err:
