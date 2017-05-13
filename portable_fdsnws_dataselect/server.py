@@ -98,6 +98,76 @@ def run_server(params):
 
     server.serve_forever()
 
+class ConfigError(Exception):
+    def __init__(self, message):
+        self.message = message
+
+def verify_configuration(params, level=0):
+    '''Verify the server's configuration.
+
+    Open the database, check for index table, check for summary table.
+    '''
+
+    # Database file exists
+    if not os.path.isfile(params['dbfile']):
+        raise ConfigError("Cannot find database file '%s'" % params['dbfile'])
+
+    # Database can be opened
+    try:
+        conn = sqlite3.connect(params['dbfile'], 10.0)
+    except Exception as err:
+        raise ConfigError("Cannot open database: " + str(err))
+
+    cur = conn.cursor()
+
+    # Specified index table exists
+    cur.execute("SELECT count(*) FROM sqlite_master WHERE type='table' and name='%s'" % params['index_table'])
+    if not cur.fetchone()[0]:
+        raise ConfigError("Cannot find index table '%s' in database" % params['index_table'])
+
+    # Fetch index table definition and construct a dictionary for comparison
+    cur.execute("PRAGMA table_info('%s')" % params['index_table'])
+    index_schema = dict()
+    for row in cur.fetchall():
+        index_schema[row[1].lower()] = row[2].lower()
+
+    # Definition of time series index schema version 1.0
+    index_version10 = {'network':'text', 'station':'text', 'location':'text', 'channel':'text', 'quality':'text',
+                        'starttime':'text', 'endtime':'text', 'samplerate':'real', 'filename':'text',
+                        'byteoffset':'integer', 'bytes':'integer', 'hash':'text', 'timeindex':'text',
+                        'timespans':'text', 'timerates':'text', 'format':'text', 'filemodtime':'text',
+                        'updated':'text', 'scanned':'text'}
+
+    # Index table schema is version 1.0
+    if index_schema != index_version10:
+        raise ConfigError("Schema for index table %s is not recognized" % params['index_table'])
+
+    if 'summary_table' in params:
+        # The summary table exists
+        cur.execute("SELECT count(*) FROM sqlite_master WHERE type='table' and name='%s'" % params['summary_table'])
+        if not cur.fetchone()[0]:
+            raise ConfigError("Cannot find summary table '%s' in database" % params['summary_table'])
+
+        # Fetch summary table definition and construct a dictionary for comparison
+        cur.execute("PRAGMA table_info('%s')" % params['summary_table'])
+        summary_schema = dict()
+        for row in cur.fetchall():
+            summary_schema[row[1].lower()] = row[2].lower() if row[2] != '' else 'text'
+
+        # Definition of summary schema version 1.0
+        summary_version10 = {'network':'text', 'station':'text', 'location':'text', 'channel':'text',
+                             'earliest':'text', 'latest':'text', 'updt':'text'}
+
+        # Summary table schema is version 1.0
+        if summary_schema != summary_version10:
+            raise ConfigError("Schema for summary table %s is not recognized" % params['index_table'])
+    else:
+        logger.warning("No summary table configured.  Such a table is strongly recommended.")
+
+    conn.close()
+
+    return
+
 
 def main():
     '''
@@ -188,22 +258,21 @@ def main():
     if config.has_option('index_db', 'path'):
         params['dbfile'] = config.get('index_db', 'path')
 
-        if not os.path.isfile(params['dbfile']):
-            msg = "Cannot find database file at '%s', exiting!" % params['dbfile']
-            logger.critical(msg)
-            print(msg)
-            sys.exit(1)
     else:
         msg = "Required database file (index_db:path) is not specified"
         logger.critical(msg)
         print(msg)
         sys.exit(1)
 
-    # Database table
+    # Index table
     if config.has_option('index_db', 'table'):
         params['index_table'] = config.get('index_db', 'table')
     else:
         params['index_table'] = 'tsindex'
+
+    # Summary table
+    if config.has_option('index_db', 'summary_table'):
+        params['summary_table'] = config.get('index_db', 'summary_table')
 
     # Data file path substitution
     if config.has_option('index_db', 'datapath_replace'):
@@ -312,33 +381,50 @@ def main():
     else:
         params['shiplogdir'] = None
 
-    # Perform initialization of all_channel_summary table in DB if requested
+    # Perform initialization of summary table in DB if requested
     if args.initialize:
-        logger.info("Initialization requested")
-        print("initializing")
+        if 'summary_table' in params:
+            logger.info("Initializing summary table %s" % params['summary_table'])
+            print("Initializing summary table %s" % params['summary_table'])
 
-        try:
-            conn = sqlite3.connect(params['dbfile'], 10.0)
-        except Exception as err:
-            logger.error("Could not connect to DB for initialization: %s" % str(err))
-            return
+            try:
+                conn = sqlite3.connect(params['dbfile'], 10.0)
+            except Exception as err:
+                logger.error("Could not connect to DB for initialization: %s" % str(err))
+                return
 
-        try:
-            c = conn.cursor()
-            c.execute("DROP TABLE IF EXISTS all_channel_summary;")
-            c.execute("CREATE TABLE all_channel_summary AS"
-                      "  SELECT network,station,location,channel,"
-                      "  min(starttime) AS earliest, max(endtime) AS latest, datetime('now') as updt"
-                      "  FROM {0}"
-                      "  GROUP BY 1,2,3,4;".format(params['index_table']))
-            conn.commit()
+            try:
+                c = conn.cursor()
+                c.execute("DROP TABLE IF EXISTS %s;" % params['summary_table'])
+                c.execute("CREATE TABLE {0} AS"
+                          "  SELECT network,station,location,channel,"
+                          "  min(starttime) AS earliest, max(endtime) AS latest, datetime('now') as updt"
+                          "  FROM {1}"
+                          "  GROUP BY 1,2,3,4;".format(params['summary_table'], params['index_table']))
+                conn.commit()
+            except Exception as err:
+                logger.error("Could not run initialization query: %s" % str(err))
+                return
+
             conn.close()
-        except Exception as err:
-            logger.error("Could not run initialization query: %s" % str(err))
-            return
+            logger.info("Initialization completed successfully")
+            sys.exit(0)
+        else:
+            print("Cannot initialize, summary table is not defined in the configuration")
+            sys.exit(1)
 
-        logger.info("Initialization completed successfully")
-        sys.exit(0)
+    # Verify configuration details
+    try:
+        verify_configuration(params, level=0)
+    except ConfigError as err:
+        print(err.message)
+        print("Configuration error, exiting.")
+        logger.critical(err.message)
+        logger.critical("Configuration error, exiting.")
+        sys.exit(1)
+    except Exception:
+        import traceback
+        traceback.print_exc()
 
     # Start the server!
     try:
