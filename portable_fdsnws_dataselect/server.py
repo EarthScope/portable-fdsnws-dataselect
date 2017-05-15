@@ -1,3 +1,6 @@
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+from future.builtins import *  # NOQA
 from socketserver import ThreadingMixIn
 from queue import Queue
 import threading
@@ -69,14 +72,16 @@ def run_server(params):
     '''
     logger.info('starting server...')
 
-    class ThreadedServer(ThreadPoolMixIn, HTTPServer):
+    # Note that `object` is the base class here, we need this to make super() work in Python 2
+    # See http://stackoverflow.com/a/18392639/1005790
+    class ThreadedServer(ThreadPoolMixIn, HTTPServer, object):
         def __init__(self, address, handlerClass=HTTPServer_RequestHandler):
-            super().__init__(address, handlerClass)
+            super(ThreadedServer, self).__init__(address, handlerClass)
             self.key = ''
 
         def set_auth(self, username, password):
             self.key = base64.b64encode(
-                bytes('%s:%s' % (username, password), 'utf-8')).decode('ascii')
+                ('%s:%s' % (username, password)).encode('utf-8')).decode('ascii')
 
         def get_auth_key(self):
             return self.key
@@ -386,12 +391,18 @@ def main():
         params['maxsectiondays'] = 10
 
     # Static document root
-    params['docroot'] = config.get('server', 'docroot', fallback='')
+    if config.has_option('server', 'docroot'):
+        params['docroot'] = config.get('server', 'docroot')
+    else:
+        params['docroot'] = ''
 
     # Show directory listings?
-    try:
-        params['show_directories'] = config.getboolean('server', 'show_directories', fallback=False)
-    except ValueError:
+    if config.has_option('server', 'show_directories'):
+        try:
+            params['show_directories'] = config.getboolean('server', 'show_directories')
+        except ValueError:
+            params['show_directories'] = False
+    else:
         params['show_directories'] = False
 
     # Shipment logging directory

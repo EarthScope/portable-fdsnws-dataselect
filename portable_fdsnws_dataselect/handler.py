@@ -81,7 +81,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         self.send_header('Content-type', 'text/plain')
         self.send_header('Connection', 'close')
         self.end_headers()
-        self.wfile.write(bytes(msg, "utf8"))
+        self.wfile.write(msg.encode("utf8"))
         logger.error("Code:%d Error:%s Request:%s" % (code, err_msg, self.path))
 
     def return_version(self):
@@ -92,7 +92,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
         message = "%d.%d.%d\n" % version
-        self.wfile.write(bytes(message, "utf8"))
+        self.wfile.write(message.encode("utf8"))
 
     def return_wadl(self):
         """
@@ -110,7 +110,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         with open(os.path.join(os.path.dirname(pkg_path), 'docs', 'application.wadl'), 'r') as f:
             # Note we need to substitute the base URL into the wadl
             message = f.read() % base_url
-            self.wfile.write(bytes(message, "utf8"))
+            self.wfile.write(message.encode("utf8"))
 
     def format_host(self, query=''):
         '''Return the full URL for this host, w/ query (if provided)
@@ -169,25 +169,27 @@ Service: fdsnws-dataselect  version %d.%d.%d
             self.send_header('Content-Type', 'text/plain')
             self.end_headers()
 
-            self.wfile.write(bytes("#{0:<7s}{1:<8s}{2:<8s}{3:<8s}{4:<28s}{5:<28s}{6:<20s}\n".
-                                   format("Net", "Sta", "Loc", "Chan", "Earliest", "Latest", "Updated"), "utf8"))
+            summary = "#{0:<7s}{1:<8s}{2:<8s}{3:<8s}{4:<28s}{5:<28s}{6:<20s}\n".format(
+                "Net", "Sta", "Loc", "Chan", "Earliest", "Latest", "Updated")
+            self.wfile.write(summary.encode("utf8"))
 
             for row in summary_rows:
                 loc = row[2] if row[2] != '' else '--'
-                self.wfile.write(bytes("{0:<8s}{1:<8s}{2:<8s}{3:<8s}{4:<28s}{5:<28s}{6:<20s}\n".
-                                       format(row[0], row[1], loc, row[3], row[4], row[5], row[6]), "utf8"))
+                summary_row = "{0:<8s}{1:<8s}{2:<8s}{3:<8s}{4:<28s}{5:<28s}{6:<20s}\n".format(
+                    row[0], row[1], loc, row[3], row[4], row[5], row[6])
+                self.wfile.write(summary_row.encode("utf8"))
             return
         elif request.endpoint == 'queryauth':
             key = self.server.get_auth_key()
             if self.headers.get('Authorization') is None:
                 # Need authorization
                 self.do_AUTHHEAD()
-                self.wfile.write(bytes('No auth header received', "utf8"))
+                self.wfile.write('No auth header received'.encode("utf8"))
                 return
             elif self.headers.get('Authorization') != 'Basic ' + str(key):
                 # Improper authorization sent; inform client
                 self.do_AUTHHEAD()
-                self.wfile.write(bytes('Invalid credentials', "utf8"))
+                self.wfile.write('Invalid credentials'.encode("utf8"))
                 return
             # Otherwise, authentication is valid and we can fall through to the normal request handling
 

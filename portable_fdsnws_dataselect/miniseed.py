@@ -11,7 +11,7 @@ import bisect
 from portable_fdsnws_dataselect.msriterator import MSR_iterator
 from logging import getLogger
 from obspy import read as mseed_read
-from _io import BytesIO
+from io import BytesIO
 import ctypes
 from obspy.core.stream import Stream
 import re
@@ -99,8 +99,10 @@ class MSRIDataSegment(ExtractedDataSegment):
             # Otherwise, write un-trimmed record
             else:
                 # Construct to avoid copying the data, supposedly
-                wfile.write((ctypes.c_char * reclen).
-                                 from_address(ctypes.addressof(self.msri.msr.contents.record.contents)))
+                logger.debug("Writing full record %s @ %s" % (self.src_name, self.msri.get_starttime()))
+                out = (ctypes.c_char * reclen).from_address(
+                    ctypes.addressof(self.msri.msr.contents.record.contents))
+                wfile.write(out.raw)
 
     def get_num_bytes(self):
         return self.msri.msr.contents.reclen
