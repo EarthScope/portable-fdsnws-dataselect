@@ -507,7 +507,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
             # Sort results in application (ORDER BY in SQL triggers bad index usage)
             summary_rows.sort()
 
-            logger.debug ("Fetched %d summary rows" % len(summary_rows))
+            logger.debug("Fetched %d summary rows" % len(summary_rows))
 
             cur.execute("DROP TABLE {0}".format(request_table))
             conn.close()
@@ -516,7 +516,19 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
     def handle_nonquery(self):
         """
-        Handle a request that doesn't correspond to any service endpoint.
+        Handle a request that doesn't correspond to any service endpoint by falling back to standard
+        web server behavior, returning static files from a configured directory.
+
+        The wrinkle here is that the document directory is mapped to the base service path
+        (ie. /fdsnws/dataselect/1/), so for example a document stored at
+        $docroot/help/questions.html
+        would appear at
+        /fdsn/dataselect/1/help/questions.html
+
+        A request to a URL not under the base service path will be redirected to the base path.
+
+        This is intended as a quick and dirty alternative to setting up a dedicated web server like Apache.
+        If more complex behavior is required, a dedicated server should be used instead.
         """
         # If the request was totally outside the service prefix, redirect to the prefix
         request_path = urlparse(self.path).path
@@ -534,8 +546,9 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
     def translate_path(self, path):
         """
-        This is part of the `SimpleHTTPRequestHandler` API, to translate a URL path to a filesystem path.
+        This is part of `SimpleHTTPRequestHandler` that gets called to serve static files by `handle_nonquery`.
 
+        This translates a URL path into a filesystem path.
         We want to strip off the URL prefix (ie. "/fdsnws/dataselect/1/") and make the rest of the URL
         path relative to the configured docroot.
         """
@@ -545,8 +558,10 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
     def list_directory(self, path):
         """
+        This is part of `SimpleHTTPRequestHandler` that gets called to serve static files by `handle_nonquery`.
+
         By default, `SimpleHTTPRequestHandler` will list the contents of a directory if there isn't
-        an index file. This is a security risk, so this will return a 404 instead unless specifically
+        an index file. This is a security risk, so this reverses the default to return a 404 unless specifically
         configured.
         """
         if self.server.params['show_directories']:

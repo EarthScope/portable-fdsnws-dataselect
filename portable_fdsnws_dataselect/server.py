@@ -5,7 +5,7 @@ import sqlite3
 import logging.config
 import argparse
 from http.server import HTTPServer
-import os.path
+import os
 
 from portable_fdsnws_dataselect import pkg_path, version
 from portable_fdsnws_dataselect.handler import HTTPServer_RequestHandler
@@ -15,6 +15,7 @@ import sys
 import configparser
 from portable_fdsnws_dataselect.miniseed import MiniseedDataExtractor
 from logging import getLogger
+from shutil import copyfile
 
 logger = getLogger(__name__)
 
@@ -186,6 +187,9 @@ def main():
     parser.add_argument("-i", "--init",
                         action="store_true", dest="initialize", default=False,
                         help="Initialize auxiliary tables in database and quit")
+    parser.add_argument("--copy_docs",
+                        action="store", dest="docpath",
+                        help="Copy documentation web pages to the given directory and quit")
 
     args = parser.parse_args()
 
@@ -193,6 +197,19 @@ def main():
     if args.genconfig:
         with open(os.path.join(os.path.dirname(pkg_path), 'example', 'server.ini'), 'r') as f:
             print(f.read())
+        sys.exit(0)
+
+    # Copy documentation
+    if args.docpath:
+        if not os.path.exists(args.docpath):
+            print("Can't copy documentation to nonexistent path '%s'" % args.docpath)
+            sys.exit(1)
+        srcpath = os.path.join(os.path.dirname(pkg_path), 'docs')
+        filenames = os.listdir(srcpath)
+        for filename in filenames:
+            if filename.endswith('.html'):
+                dst = copyfile(os.path.join(srcpath, filename), os.path.join(args.docpath, filename))
+                print("Created '%s'" % dst)
         sys.exit(0)
 
     if not args.configfile:
