@@ -212,7 +212,8 @@ def main():
         srcpath = os.path.join(os.path.dirname(pkg_path), 'docs')
         filenames = os.listdir(srcpath)
         for filename in filenames:
-            if filename.endswith('.html'):
+            (_root, ext) = os.path.splitext(filename)
+            if ext in ('.html', '.css',):
                 dst = copyfile(os.path.join(srcpath, filename), os.path.join(args.docpath, filename))
                 print("Created '%s'" % dst)
         sys.exit(0)

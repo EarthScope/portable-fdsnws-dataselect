@@ -525,7 +525,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         (ie. /fdsnws/dataselect/1/), so for example a document stored at
         $docroot/help/questions.html
         would appear at
-        /fdsn/dataselect/1/help/questions.html
+        /fdsnws/dataselect/1/help/questions.html
 
         A request to a URL not under the base service path will be redirected to the base path.
 
