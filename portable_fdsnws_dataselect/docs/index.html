@@ -1,9 +1,9 @@
 <!doctype html>
 <html lang="en">
   <head>
-    
+
       <title>Portable-FDSNWS-Dataselect Service Interface</title>
-      
+
   <meta name="keywords" content="seismology, seismological data,
   earthquakes, iris dmc" />
   <meta name="description" content="IRIS is a consortium of
@@ -24,20 +24,20 @@
     table > tfoot > tr > td
     { border: 1px solid #ddd; padding: 8px; line-height: 1.5; vertical-align: top; border-top}
   </style>
-  <!--script type="text/javascript" src="//netdna.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script-->  
+  <!--script type="text/javascript" src="//netdna.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script-->
   </head>
-  
+
   <body>
-  
+
     <h1>Portable FDSNWS Dataselect Service Interface</h1>
 
     <p><a href="help.html">Display Help</a></p>
-    
+
     <h2>Description</h2>
 
     <p>The <strong>fdsnws-dataselect</strong> service provides access to time series data for specified channels and time ranges.</p>
 
-	<p>Data are selected using <a href="http://ds.iris.edu/ds/nodes/dmc/data/formats/seed/">SEED</a> time series identifiers (network, station, location &amp; channel) in addition to time ranges.  Data are returned in <a href="http://ds.iris.edu/ds/nodes/dmc/data/formats/seed/">miniSEED</a> format.</p>
+	<p>Data are selected using <a href="http://ds.iris.edu/ds/nodes/dmc/data/formats/seed/#data-identification-nomenclature">SEED</a> time series identifiers (network, station, location &amp; channel) in addition to time ranges.  Data are returned in <a href="http://ds.iris.edu/ds/nodes/dmc/data/formats/seed/#miniseed">miniSEED</a> format.</p>
 
 	<p>This service is an implementation of the <a href="http://www.fdsn.org/webservices/">FDSN web service specification</a> version 1.</p>
 
@@ -71,9 +71,12 @@ longestonly=&lt;true|false&gt;
 
 	<p>Quality, minimumlength, and longestonly are optional.  Wildcards are acceptable for Network, Station, Location, and Channel.  Click <a href="#time">here</a> for time format details.</p>
 
-  <h3>Sample Queries</h3>
+  <h3>Sample Query</h3>
   	<ul>
-		<li><a href="/fdsnws/dataselect/1/query?net=IU&amp;sta=ANMO&amp;loc=00&amp;cha=BHZ&amp;start=2010-02-27T06:30:00.000&amp;end=2010-02-27T10:30:00.000">http://service.iris.edu/fdsnws/dataselect/1/query?net=IU&sta=ANMO&loc=00&cha=BHZ&start=2010-02-27T06:30:00.000&end=2010-02-27T10:30:00.000</a></li>
+	  <li><a href="/fdsnws/dataselect/1/query?net=IU&amp;sta=ANMO&amp;loc=00&amp;cha=BHZ&amp;start=2010-02-27T06:30:00.000&amp;end=2010-02-27T10:30:00.000&nodata=404">/fdsnws/dataselect/1/query?net=IU&sta=ANMO&loc=00&cha=BHZ&start=2010-02-27T06:30:00.000&end=2010-02-27T10:30:00.000&nodata=404</a></li>
+          <li>
+            Sample query may not result in data, replace the identifiers and time range to match channel(s) in your data set.
+            </li>
 	</ul>
 
   <h3>Detailed Descriptions of each Query Parameter</h3>
@@ -154,7 +157,7 @@ longestonly=&lt;true|false&gt;
 	</table></div>
 
 	<p class="footnote" id="fn4b4b326ed9254ea9a6e10ca89721bcb0"><sup>1</sup> By default, the service returns a <span class="caps">HTTP</span> response code 204, which means the request was successful, but no data (<em>no content</em>) was retrieved. However, because there was no &#8220;error&#8221;, no error message is generated and it may appear that the browser did nothing.  To force an empty query response to display an error message, add <code>nodata=404</code> to the <span class="caps">URL</span>.</p>
-  
+
     <hr/>
     <h3>WADL</h3>
     <p>Retrieve the <a href="http://www.w3.org/Submission/wadl/">WADL</a>
@@ -164,11 +167,11 @@ longestonly=&lt;true|false&gt;
         application.wadl
       </a>
     </p>
-  
+
 
   <hr/>
 
-  
+
     <h3><a name="time"></a>Date and Time Formats</h3>
     <div>
       	<p id="time">Year, Month, Day in Month &mdash; Time:</p>
@@ -188,7 +191,7 @@ mm	:: two digits of minute (00 through 59)
 ss	:: two digits of second (00 through 59)
 ssssss	:: one to six digits representing decimal fractions of a second, down to microseconds</pre>
     </div>
-    
+
     <hr/>
 
     <h3><a name="wildcardsandlists"></a>Wildcards and Lists</h3>
@@ -199,11 +202,11 @@ The question mark <code>?</code> represents any single character (exactly one), 
 	<p><em>Lists</em><br />
 Multiple items may also be retrieved using a comma separated list. Wildcards may be included in the list.  For example, with channel codes: <code>channel=EH?,BHZ,BHE</code></p>
     </div>
-  
 
-  
+
+
     <hr/>
-  
+
     <!-- START: RESTRICTED DATA -->
 <h3>Restricted Data Access</h3>
 
@@ -226,6 +229,6 @@ credential has identical data access permission as the regular submit path's:
   </a>
 </p>
 
-  
+
   </body>
 </html>
