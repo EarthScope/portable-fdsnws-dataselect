@@ -9,9 +9,14 @@ from __future__ import (print_function)
 
 # Always prefer setuptools over distutils
 from setuptools import setup, find_packages
+from setuptools.command.install import install
+from setuptools.command.develop import develop
+from distutils import log
+
 # To use a consistent encoding
 from codecs import open
 from os import path
+import sys
 
 module_name = 'portable_fdsnws_dataselect'
 
@@ -25,6 +30,38 @@ here = path.abspath(path.dirname(__file__))
 # Get the long description from the description.rst file
 with open(path.join(here, 'description.rst'), encoding='utf-8') as f:
     long_description = f.read()
+
+def custom_command(subclass):
+    orig_run = subclass.run
+
+    def custom_run(self):
+        orig_run(self)
+        self.announce(
+'''###########################################
+Portable fdsnws-dataselect has been installed.  To get started follow these steps:
+
+1) Generate a sample server configuration file with:
+
+$ portable-fdsnws-dataselect -s > server.ini
+
+2) Edit the server.ini file to specify the database file and other settings.
+
+3) Run the server with:
+
+$ portable-fdsnws-dataselect server.ini
+
+###########################################''', level=log.INFO)
+
+    subclass.run = custom_run
+    return subclass
+
+@custom_command
+class CustomDevelopCommand(develop):
+    pass
+
+@custom_command
+class CustomInstallCommand(install):
+    pass
 
 setup(
     name='portable-fdsnws-dataselect',
@@ -99,5 +136,10 @@ setup(
         'console_scripts': [
             'portable-fdsnws-dataselect=%s.server:main'%(module_name),
         ],
+    },
+
+    cmdclass={
+        'develop': CustomDevelopCommand,
+        'install': CustomInstallCommand,
     },
 )
