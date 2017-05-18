@@ -15,7 +15,7 @@ from portable_fdsnws_dataselect.handler import HTTPServer_RequestHandler
 import socket
 import base64
 import sys
-import configparser
+from configparser import ConfigParser
 from portable_fdsnws_dataselect.miniseed import MiniseedDataExtractor
 from logging import getLogger
 from shutil import copyfile
@@ -226,7 +226,7 @@ def main():
         print("Configuration file '%s' does not exist" % args.configfile)
         sys.exit(1)
 
-    config = configparser.ConfigParser()
+    config = ConfigParser()
     config.read(args.configfile)
 
     # Set up logging

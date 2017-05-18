@@ -35,6 +35,9 @@ def custom_command(subclass):
     orig_run = subclass.run
 
     def custom_run(self):
+        # Check that this version of python is OK
+        if sys.version_info < (2,7):
+            sys.exit('Sorry, Python versions earlier than 2.7 are not supported')
         orig_run(self)
         self.announce(
 '''###########################################
@@ -105,8 +108,10 @@ setup(
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
+        'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
-        'Programming Language :: Python :: 3.6'
+        'Programming Language :: Python :: 3.6',
     ],
 
     # What does your project relate to?

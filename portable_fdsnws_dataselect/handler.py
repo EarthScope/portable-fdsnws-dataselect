@@ -5,6 +5,10 @@ HTTP request handler
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 from future.builtins import *  # NOQA
+from future.standard_library import install_aliases
+install_aliases()
+from urllib.parse import urlparse, urlencode
+
 import sqlite3
 import re
 import datetime
@@ -12,7 +16,6 @@ from obspy.core.utcdatetime import UTCDateTime
 from obspy.core.stream import Stream
 import uuid
 from http.server import BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
 import os.path
 import time
 from portable_fdsnws_dataselect import pkg_path, version
