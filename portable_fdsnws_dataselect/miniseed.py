@@ -157,7 +157,7 @@ class MiniseedDataExtractor(object):
             self.dp_replace_sub = None
         self.request_limit = request_limit
 
-    def handle_trimming(self, stime, etime, row):
+    def handle_trimming(self, stime, etime, NRow):
         """
         Get the time & byte-offsets for the data in time range (stime, etime).
 
@@ -166,15 +166,15 @@ class MiniseedDataExtractor(object):
 
         :returns: [(start time, start offset), (end time, end offset)]
         """
-        etime = UTCDateTime(row[20])
-        row_stime = UTCDateTime(row[5])
-        row_etime = UTCDateTime(row[6])
+        etime = UTCDateTime(NRow.requestend)
+        row_stime = UTCDateTime(NRow.starttime)
+        row_etime = UTCDateTime(NRow.endtime)
 
         # If we need a subset of the this block, trim it accordingly
-        block_start = int(row[9])
-        block_end = block_start + int(row[10])
+        block_start = int(NRow.byteoffset)
+        block_end = block_start + int(NRow.bytes)
         if stime > row_stime or etime < row_etime:
-            tix = [x.split("=>") for x in row[12].split(",")]
+            tix = [x.split("=>") for x in NRow.timeindex.split(",")]
             if tix[-1][0] == 'latest':
                 tix[-1] = [str(row_etime.timestamp), block_end]
             to_x = [float(x[0]) for x in tix]
@@ -204,30 +204,32 @@ class MiniseedDataExtractor(object):
         # Note: accumulated estimate of output bytes will be equal to or higher than actual output
         total_bytes = 0
         request_rows = []
-        Request = namedtuple('Request', ['src_name', 'file_name', 'start_time', 'end_time',
-                                         'trim_info', 'section_bytes', 'sample_rate'])
+        Request = namedtuple('Request', ['srcname', 'filename', 'starttime', 'endtime',
+                                         'triminfo', 'bytes', 'samplerate'])
         if self.request_limit > 0:
             try:
-                for row in index_rows:
-                    file_name = row[8]
-                    start_time = UTCDateTime(row[19])
-                    end_time = UTCDateTime(row[20])
-                    trim_info = self.handle_trimming(start_time, end_time, row)
-                    total_bytes += trim_info[1][1] - trim_info[0][1]
+                for NRow in index_rows:
+                    srcname = "_".join(NRow[:4])
+                    filename = NRow.filename
+                    starttime = UTCDateTime(NRow.requeststart)
+                    endtime = UTCDateTime(NRow.requestend)
+                    triminfo = self.handle_trimming(starttime, endtime, NRow)
+                    total_bytes += triminfo[1][1] - triminfo[0][1]
                     if total_bytes > self.request_limit:
                         raise RequestLimitExceededError("Result exceeds limit of %d bytes" % self.request_limit)
                     if self.dp_replace_re:
-                        file_name = self.dp_replace_re.sub(self.dp_replace_sub, file_name)
-                    if not os.path.exists(file_name):
-                        raise Exception("Data file does not exist: %s" % file_name)
-                    request_rows.append(Request(src_name="_".join(row[:4]),
-                                                file_name=file_name,
-                                                start_time=start_time,
-                                                end_time=end_time,
-                                                trim_info=trim_info,
-                                                section_bytes=row[10],
-                                                sample_rate=row[7]))
-                    logger.debug("REQUEST: src=%s, file=%s, bytes=%s, rate:%s" % ("_".join(row[:4]), file_name, row[10], row[7]))
+                        filename = self.dp_replace_re.sub(self.dp_replace_sub, filename)
+                    if not os.path.exists(filename):
+                        raise Exception("Data file does not exist: %s" % filename)
+                    request_rows.append(Request(srcname=srcname,
+                                                filename=filename,
+                                                starttime=starttime,
+                                                endtime=endtime,
+                                                triminfo=triminfo,
+                                                bytes=NRow.bytes,
+                                                samplerate=NRow.samplerate))
+                    logger.debug("REQUEST: src=%s, file=%s, bytes=%s, rate:%s" %
+                                 (srcname, filename, NRow.bytes, NRow.samplerate))
             except Exception as err:
                 import traceback
                 traceback.print_exc()
@@ -238,25 +240,25 @@ class MiniseedDataExtractor(object):
             raise NoDataError()
 
         # Get & return the actual data
-        for row in request_rows:
-            logger.debug("Extracting %s (%s - %s) from %s" % (row.src_name, row.start_time, row.end_time, row.file_name))
+        for NRow in request_rows:
+            logger.debug("Extracting %s (%s - %s) from %s" % (NRow.srcname, NRow.starttime, NRow.endtime, NRow.filename))
 
             # Iterate through records in section if only part of the section is needed
-            if row.trim_info[0][2] or row.trim_info[1][2]:
+            if NRow.triminfo[0][2] or NRow.triminfo[1][2]:
 
-                for msri in MSR_iterator(filename=row.file_name, startoffset=row.trim_info[0][1], dataflag=False):
+                for msri in MSR_iterator(filename=NRow.filename, startoffset=NRow.triminfo[0][1], dataflag=False):
                     offset = msri.get_offset()
 
                     # Done if we are beyond end offset
-                    if offset >= row.trim_info[1][1]:
+                    if offset >= NRow.triminfo[1][1]:
                         break
 
-                    yield MSRIDataSegment(msri, row.sample_rate, row.start_time, row.end_time, row.src_name)
+                    yield MSRIDataSegment(msri, NRow.samplerate, NRow.starttime, NRow.endtime, NRow.srcname)
 
                     # Check for passing end offset
-                    if (offset + msri.msr.contents.reclen) >= row.trim_info[1][1]:
+                    if (offset + msri.msr.contents.reclen) >= NRow.triminfo[1][1]:
                         break
 
             # Otherwise, return the entire section
             else:
-                yield FileDataSegment(row.file_name, row.trim_info[0][1], row.section_bytes, row.src_name)
+                yield FileDataSegment(NRow.filename, NRow.triminfo[0][1], NRow.bytes, NRow.srcname)

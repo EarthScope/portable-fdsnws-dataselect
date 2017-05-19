@@ -9,6 +9,7 @@ from future.standard_library import install_aliases
 install_aliases()
 from urllib.parse import urlparse, urlencode
 
+from collections import namedtuple
 import sqlite3
 import re
 import datetime
@@ -176,10 +177,11 @@ Service: fdsnws-dataselect  version %d.%d.%d
                 "Net", "Sta", "Loc", "Chan", "Earliest", "Latest", "Updated")
             self.wfile.write(summary.encode("utf8"))
 
-            for row in summary_rows:
-                loc = row[2] if row[2] != '' else '--'
+            for NRow in summary_rows:
+                loc = NRow.location if NRow.location != '' else '--'
                 summary_row = "{0:<8s}{1:<8s}{2:<8s}{3:<8s}{4:<28s}{5:<28s}{6:<20s}\n".format(
-                    row[0], row[1], loc, row[3], row[4], row[5], row[6])
+                    NRow.network, NRow.station, NRow.location, NRow.channel,
+                    NRow.earliest, NRow.latest, NRow.updated)
                 self.wfile.write(summary_row.encode("utf8"))
             return
         elif request.endpoint == 'queryauth':
@@ -274,7 +276,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         Request elements may contain '?' and '*' wildcards.  The start and
         end elements can be a single '*' if not a date-time string.
 
-        Return rows as list of tuples containing:
+        Return rows as list of named tuples containing:
         (network,station,location,channel,quality,starttime,endtime,samplerate,
          filename,byteoffset,bytes,hash,timeindex,timespans,timerates,
          format,filemodtime,updated,scanned,requeststart,requestend)
@@ -369,7 +371,20 @@ Service: fdsnws-dataselect  version %d.%d.%d
             traceback.print_exc()
             raise ValueError(str(err))
 
-        index_rows = cur.fetchall()
+        # Map raw tuples to named tuples for clear referencing
+        NamedRow = namedtuple ('NamedRow',
+                               ['network','station','location','channel','quality',
+                                'starttime','endtime','samplerate','filename',
+                                'byteoffset','bytes','hash','timeindex','timespans',
+                                'timerates','format','filemodtime','updated','scanned',
+                                'requeststart','requestend'])
+
+        index_rows = []
+        while True:
+            row = cur.fetchone()
+            if row is None:
+                break
+            index_rows.append(NamedRow(*row))
 
         # Sort results in application (ORDER BY in SQL triggers bad index usage)
         index_rows.sort()
@@ -441,7 +456,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         Request elements may contain '?' and '*' wildcards.  The start and
         end elements can be a single '*' if not a date-time string.
 
-        Return rows as list of tuples containing:
+        Return rows as list of named tuples containing:
         (network,station,location,channel,earliest,latest,updated)
         '''
         summary_rows = []
@@ -507,7 +522,17 @@ Service: fdsnws-dataselect  version %d.%d.%d
             except Exception as err:
                 raise ValueError(str(err))
 
-            summary_rows = cur.fetchall()
+            # Map raw tuples to named tuples for clear referencing
+            NamedRow = namedtuple ('NamedRow',
+                                   ['network','station','location','channel',
+                                    'earliest','latest','updated'])
+
+            summary_rows = []
+            while True:
+                row = cur.fetchone()
+                if row is None:
+                    break
+                summary_rows.append(NamedRow(*row))
 
             # Sort results in application (ORDER BY in SQL triggers bad index usage)
             summary_rows.sort()
