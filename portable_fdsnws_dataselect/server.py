@@ -9,6 +9,7 @@ import logging.config
 import argparse
 from http.server import HTTPServer
 import os
+from platform import python_version
 
 from portable_fdsnws_dataselect import pkg_path, version
 from portable_fdsnws_dataselect.handler import HTTPServer_RequestHandler
@@ -92,9 +93,15 @@ def run_server(params):
     if 'username' in params and 'password' in params:
         server.set_auth(params['username'], params['password'])
 
-    msg = 'running dataselect server @ %s:%d' % (params['interface'], params['port'])
-    logger.info(msg)
+    msg = ('Started dataselect server (%s) @ http://%s:%d'
+           % (".".join(str(i) for i in version),
+              server.server_name,
+              server.server_port))
+    logger.warning(msg)
     print(msg)
+
+    msg = 'Running under Python %s' % python_version()
+    logger.warning(msg)
 
     for p in sorted(server.params.keys()):
         logger.info('CONFIG %s: %s' % (p, str(server.params[p])))
@@ -204,7 +211,6 @@ def main():
     # Print versions
     if args.version:
         print ('portable-fdsnws-dataselect %s' % ".".join(str(i) for i in version))
-        from platform import python_version
         print ('Running under Python %s' % python_version())
         sys.exit(0)
 
