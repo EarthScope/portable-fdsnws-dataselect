@@ -1,6 +1,5 @@
 # The portable-fdsnws-dataselect user guide
 
-# Table of Contents
 1. [Overview](#overview)
 1. [Installing the server](#installing-the-server)
 1. [Running the server](#running-the-server)
@@ -17,7 +16,7 @@ formatted data using a standardized web service.
 The server requires a data index, as created by [mseedindex](https://github.com/iris-edu/mseedindex/wiki)
 to serve data from a repository.
 
-## Installing the server:
+## Installing the server
 
 Requirements: Python 2.7 or higher, [ObsPy](http://obspy.org) and some common modules.
 
@@ -54,7 +53,7 @@ To later upgrade the server to future releases use the following command:
 
     /path/to/python/bin/pip install -U portable-fdsnws-dataselect
 
-## Running the server:
+## Running the server
 
 The server is started by using the `/path/to/python/bin/portable-fdsnws-dataselect`
 (e.g. `miniconda3/bin/portable-fdsnws-dataselect`).  But first you must create a server
@@ -80,10 +79,10 @@ with an address like `http://ServerHost:ServerPort/`, e.g. `http://localhost:808
 Make sure to look into the server log file (specified in the config file) for errors
 if things are not working as ex
 
-## Preparing your data for use with server:
+## Preparing your data for use with server
 
 Use the program [mseedindex](https://github.com/iris-edu/mseedindex) to create a SQLite
 database containing an index of the miniSEED data you wish to make available through your server.
-[Instructions are available in the Wiki of mseedindex](https://github.com/iris-edu/mseedindex/wiki).
+[Instructions are available in the Wiki for mseedindex](https://github.com/iris-edu/mseedindex/wiki).
 
 ## This software is a product of the [IRIS Data Management Center](http://ds.iris.edu/ds/nodes/dmc/)
