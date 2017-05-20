@@ -37,18 +37,18 @@ recommend Minicona like this:
 
 2. Install in a specified directory (`miniconda3`), e.g. for a macOS and Linux:
 
-bash Miniconda3-latest-MacOSX-x86_64.sh -p miniconda3 -b
+   bash Miniconda3-latest-MacOSX-x86_64.sh -p miniconda3 -b
 
-3. Add the conda-forge channel and install ObsPy and make sure future and requests are installed
+3. Add the conda-forge channel, install ObsPy and make sure future and requests are installed:
 
-    ./miniconda3/bin/conda config --add channels conda-forge
-    ./miniconda3/bin/conda install -y pip obspy future requests
+    miniconda3/bin/conda config --add channels conda-forge
+    miniconda3/bin/conda install -y pip obspy future requests
 
 ### Install the server from PyPI using `pip`
 
     /path/to/python/bin/pip install portable-fdsnws-dataselect
 
-If you installed Miniconda as illustrated above the command would be `./miniconda3/bin/pip`.
+If you installed Miniconda as illustrated above the command would be `miniconda3/bin/pip`.
 
 To later upgrade the server to future releases use the following command:
 
@@ -57,7 +57,7 @@ To later upgrade the server to future releases use the following command:
 ## Running the server:
 
 The server is started by using the `/path/to/python/bin/portable-fdsnws-dataselect`
-(e.g. `./miniconda3/bin/portable-fdsnws-dataselect`).  But first you must create a server
+(e.g. `miniconda3/bin/portable-fdsnws-dataselect`).  But first you must create a server
 configuration file.  The `portable-fdsnws-dataselect` command will print an example
 configuration file if the `-s` option is specified.  To get started:
 
