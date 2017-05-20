@@ -26,9 +26,9 @@ be adjusted to wherever your preferred python setup is located.
 ### [Optional] Install a dedicated Python
 
 If you would prefer to have a dedicated Python installation just for the server we
-recommend Minicona like this:
+recommend [Minicona](https://conda.io/miniconda.html) like this:
 
-1. Download Miniconda for your OS:
+1. Download [Miniconda](https://conda.io/miniconda.html) for your OS:
 
     ```
     https://repo.continuum.io/miniconda/Miniconda3-latest-MacOSX-x86_64.sh
@@ -49,7 +49,7 @@ recommend Minicona like this:
     miniconda3/bin/conda install -y pip obspy future requests
     ```
 
-### Install the server from PyPI using `pip`
+### Install the server from [PyPI](https://pypi.python.org/pypi) using `pip`
 
     /path/to/python/bin/pip install portable-fdsnws-dataselect
 
