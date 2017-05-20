@@ -1,2 +1,2 @@
 pkg_path = __file__
-version = (1, 1, 2)
+version = (1, 1, 3)
