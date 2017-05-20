@@ -51,17 +51,13 @@ recommend Minicona like this:
 
 ### Install the server from PyPI using `pip`
 
-    ```
     /path/to/python/bin/pip install portable-fdsnws-dataselect
-    ```
 
 If you installed Miniconda as illustrated above the command would be `miniconda3/bin/pip`.
 
 To later upgrade the server to future releases use the following command:
 
-    ```
     /path/to/python/bin/pip install -U portable-fdsnws-dataselect
-    ```
 
 ## Running the server
 
@@ -70,24 +66,18 @@ The server is started by using the `/path/to/python/bin/portable-fdsnws-datasele
 configuration file.  The `portable-fdsnws-dataselect` command will print an example
 configuration file if the `-s` option is specified.  To get started:
 
-    ```
     /path/to/python/bin/portable-fdsnws-dataselect -s > server.ini
-    ```
 
 Next edit the `server.ini` file, changing values to match your configuratation, in particular:
 
 * The `path` option in the `[index_db]` section must point to your SQLite database file
 * The `datapath_replace` option in the same section might be needed to modify the data file paths if the index table in the database does not match the actual data path.
 
-    ```
     run_fdsnws_dataselect -c <path-to-your-config-file>
-    ```
 
 Finally, run the server:
 
-    ```
     /path/to/python/bin/portable-fdsnws-dataselect server.ini
-    ```
 
 You should then be able to see the service interface documentation using a web browser
 with an address like `http://ServerHost:ServerPort/`, e.g. `http://localhost:8080/`.
