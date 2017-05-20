@@ -1,40 +1,86 @@
 # The portable-fdsnws-dataselect user guide
 
-## How to Install the Server:
+# Table of Contents
+1. [Overview](#overview)
+1. [Installing the server](#installing-the-server)
+1. [Running the server](#running-the-server)
+1. [Preparing your data for use with server](#preparing-your-data-for-use-with-server)
 
-1. You need an installation on Python 3.5 or higher.
+## Overview
 
-2. Issue the command
+The portable-fdsnws-dataselect server is an implementation of the
+[International FDSN's](https://www.fdsn.org/)
+[fdsnws-dataselect](http://www.fdsn.org/webservices/) web service specification.
+In a nutshell, this server can be used to provide access to a repository of miniSEED
+formatted data using a standardized web service.
 
-    `pip install portable_fdsnws_dataselect`
-    
-(To upgrade to the current version, add a `-U` after `install` (with a space between the two)
+The server requires a data index, as created by [mseedindex](https://github.com/iris-edu/mseedindex/wiki)
+to serve data from a repository.
 
-3.  There is no step 3!  You should now have an executable named `run_fdsnws_dataselect`.
+## Installing the server:
 
+Requirements: Python 2.7 or higher, [ObsPy](http://obspy.org) and some common modules.
 
-## How to Prepare your Data for the Server:
+The instructions below identify key programs as `/path/to/python/bin/<program>`, which should
+be adjusted to wherever your preferred python setup is located.
 
-1. Use the program mseedindex (https://github.com/iris-edu/mseedindex) to create a Sqlite database containing an index of the miniseed data you wish to make available through your server.
+### [Optional] Install a dedicated Python
 
-2. You can print a config file example by running `run_fdsnws_dataselect -s`; if you direct this to a file, you can edit it for your installation.
+If you would prefer to have a dedicated Python installation just for the server we
+recommend Minicona like this:
 
-The parameters that need to be supplied are:
+1. Download Miniconda for your OS:
+    https://repo.continuum.io/miniconda/Miniconda3-latest-MacOSX-x86_64.sh
+    https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh
+    https://repo.continuum.io/miniconda/Miniconda3-latest-Windows-x86_64.exe
 
-* The IP address and port number your server will be accessible from
-* The path to the database file you created in the previous step
-* The name of the table you created using mseedindex, if it was not the default
+2. Install in a specified directory (`miniconda3`), e.g. for a macOS and Linux:
+    `bash Miniconda3-latest-MacOSX-x86_64.sh -p miniconda3 -b`
 
-There are other settings which are optional.
+3. Add the conda-forge channel and install ObsPy and make sure future and requests are installed
+    `./miniconda3/bin/conda config --add channels conda-forge`
+    `./miniconda3/bin/conda install -y pip obspy future requests`
 
-3. Before the program can use your database, a table must be created in it.  This can be done with the command:
+### Install the server from PyPI using `pip`
 
-    `run_fdsnws_dataselect -i -c <path-to-your-config-file>`
-    
-If `-c` is left out, the program will look for a config file named `server.ini` in the current directory
+    `/path/to/python/bin/pip install portable-fdsnws-dataselect`
+
+If you installed Miniconda as illustrated above the command would be `./miniconda3/bin/pip`.
+
+To later upgrade the server to future releases use the following command:
+
+    `/path/to/python/bin/pip install -U portable-fdsnws-dataselect`
 
 ## How to Run your Server:
 
+The server is started by using the `/path/to/python/bin/portable-fdsnws-dataselect`
+(e.g. `./miniconda3/bin/portable-fdsnws-dataselect`).  But first you must create a server
+configuration file.  The `portable-fdsnws-dataselect` command will print an example
+configuration file if the `-s` option is specified.  To get started:
+
+    `/path/to/python/bin/portable-fdsnws-dataselect -s > server.ini`
+
+Next edit the `server.ini` file, changing values to match your configuratation, in particular:
+    * The `path` option in the `[index_db]` section must point to your SQLite database file
+    * The `datapath_replace` option in the same section might be needed to modify the data file paths
+    if the index table in the database does not match the actual data path.
+
     `run_fdsnws_dataselect -c <path-to-your-config-file>`
 
+Finally, run the server:
 
+    `/path/to/python/bin/portable-fdsnws-dataselect server.ini`
+
+You should then be able to see the service interface documentation using a web browser
+with an address like `http://ServerHost:ServerPort/`, e.g. `http://localhost:8080/`.
+
+Make sure to look into the server log file (specified in the config file) for errors
+if things are not working as ex
+
+## Preparing your data for use with server:
+
+Use the program [mseedindex](https://github.com/iris-edu/mseedindex) to create a SQLite
+database containing an index of the miniSEED data you wish to make available through your server.
+[Instructions are available in the Wiki of mseedindex](https://github.com/iris-edu/mseedindex/wiki).
+
+## This software is a product of the [IRIS Data Management Center](http://ds.iris.edu/ds/nodes/dmc/)
