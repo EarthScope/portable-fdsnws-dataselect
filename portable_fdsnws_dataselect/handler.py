@@ -180,7 +180,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
             for NRow in summary_rows:
                 loc = NRow.location if NRow.location != '' else '--'
                 summary_row = "{0:<8s}{1:<8s}{2:<8s}{3:<8s}{4:<28s}{5:<28s}{6:<20s}\n".format(
-                    NRow.network, NRow.station, NRow.location, NRow.channel,
+                    NRow.network, NRow.station, loc, NRow.channel,
                     NRow.earliest, NRow.latest, NRow.updated)
                 self.wfile.write(summary_row.encode("utf8"))
             return
