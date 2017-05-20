@@ -93,4 +93,6 @@ database containing an index of the miniSEED data you wish to make available thr
 
 ## This software is a product of the [IRIS Data Management Center](http://ds.iris.edu/ds/nodes/dmc/)
 
-The source code repository is here: https://github.com/iris-edu/portable-fdsnws-dataselect
+The source code repository is here: [https://github.com/iris-edu/portable-fdsnws-dataselect](https://github.com/iris-edu/portable-fdsnws-dataselect)
+
+
