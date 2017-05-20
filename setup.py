@@ -22,7 +22,7 @@ module_name = 'portable_fdsnws_dataselect'
 
 # Generate version string from version tuple in server code
 import importlib
-server = importlib.import_module(module_name + '.server')
+server = importlib.import_module(module_name)
 version = '%d.%d.%d' % (server.version[0], server.version[1], server.version[2])
 
 here = path.abspath(path.dirname(__file__))
