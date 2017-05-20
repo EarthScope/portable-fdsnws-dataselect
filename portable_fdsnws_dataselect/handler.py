@@ -203,7 +203,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
         # Get the corresponding index DB entries
         try:
-            index_rows = self.fetch_index_rows(request.query_rows)
+            index_rows = self.fetch_index_rows(request.query_rows, request.bulk_params)
         except Exception as err:
             self.return_error(400, str(err))
             return
@@ -267,11 +267,12 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
         return
 
-    def fetch_index_rows(self, query_rows):
+    def fetch_index_rows(self, query_rows, bulk_params):
         '''
         Fetch index rows matching specified request
 
         `query_rows`: List of tuples containing (net,sta,loc,chan,start,end)
+        `bulk_params`: Dict of bulk parameters (e.g. quality, minsegmentlength)
 
         Request elements may contain '?' and '*' wildcards.  The start and
         end elements can be a single '*' if not a date-time string.
@@ -364,6 +365,11 @@ Service: fdsnws-dataselect  version %d.%d.%d
                    .format(self.server.params['index_table'],
                            request_table, "GLOB" if wildcards else "=",
                            self.server.params['maxsectiondays']))
+
+            # Add quality identifer criteria
+            if 'quality' in bulk_params and bulk_params['quality'] in ('D','R','Q'):
+                sql = sql + " AND quality = '{0}' ".format(bulk_params['quality'])
+
             cur.execute(sql)
 
         except Exception as err:
