@@ -186,19 +186,29 @@ def main():
     # Build argument parser
     parser = argparse.ArgumentParser(description='Portable fdsnws-dataselect server')
     parser.add_argument('configfile', nargs='?', action='store')
+    parser.add_argument("-V", "--version",
+                        action="store_true", dest="version", default=False,
+                        help="Print server and Python version and quit")
     parser.add_argument("-s", "--sample_config",
                         action="store_true", dest="genconfig", default=False,
-                        help="Generate a sample config file & quit")
+                        help="Generate a sample config file and quit")
     parser.add_argument("-i", "--init",
                         action="store_true", dest="initialize", default=False,
                         help="Initialize auxiliary tables in database and quit")
-    parser.add_argument("--copy_docs",
+    parser.add_argument("-cd", "--copy_docs",
                         action="store", dest="docpath",
                         help="Copy documentation web pages to the given directory and quit")
 
     args = parser.parse_args()
 
-    # Return sample configuration file
+    # Print versions
+    if args.version:
+        print ('portable-fdsnws-dataselect %s' % ".".join(str(i) for i in version))
+        from platform import python_version
+        print ('Running under Python %s' % python_version())
+        sys.exit(0)
+
+    # Print sample configuration file
     if args.genconfig:
         with open(os.path.join(os.path.dirname(pkg_path), 'example', 'server.ini'), 'r') as f:
             print(f.read())
