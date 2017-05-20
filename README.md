@@ -1,9 +1,5 @@
 # portable-fdsnws-dataselect
-A portable fdsnws-dataselect server implementation
 
-## Motivation
+A portable [fdsnws-dataselect](http://www.fdsn.org/webservices/) server implementation.
 
-This is a portable fdsnws-dataselect/1 implementation which will allow a wide 
-variety of users to host arbitrary data sets and take advantage of existing 
-data selection and collection tools. The system uses a miniSEED data index 
-devised by the IRIS DMC and stored in SQLite.
+For more information see the [User Guide](https://iris-edu.github.io/portable-fdsnws-dataselect/).
