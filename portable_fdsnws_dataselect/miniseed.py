@@ -212,34 +212,37 @@ class MiniseedDataExtractor(object):
         request_rows = []
         Request = namedtuple('Request', ['srcname', 'filename', 'starttime', 'endtime',
                                          'triminfo', 'bytes', 'samplerate'])
-        if self.request_limit > 0:
-            try:
-                for NRow in index_rows:
-                    srcname = "_".join(NRow[:4])
-                    filename = NRow.filename
-                    starttime = UTCDateTime(NRow.requeststart)
-                    endtime = UTCDateTime(NRow.requestend)
-                    triminfo = self.handle_trimming(starttime, endtime, NRow)
-                    total_bytes += triminfo[1][1] - triminfo[0][1]
-                    if total_bytes > self.request_limit:
-                        raise RequestLimitExceededError("Result exceeds limit of %d bytes" % self.request_limit)
-                    if self.dp_replace_re:
-                        filename = self.dp_replace_re.sub(self.dp_replace_sub, filename)
-                    if not os.path.exists(filename):
-                        raise Exception("Data file does not exist: %s" % filename)
-                    request_rows.append(Request(srcname=srcname,
-                                                filename=filename,
-                                                starttime=starttime,
-                                                endtime=endtime,
-                                                triminfo=triminfo,
-                                                bytes=NRow.bytes,
-                                                samplerate=NRow.samplerate))
-                    logger.debug("EXTRACT: src=%s, file=%s, bytes=%s, rate:%s" %
-                                 (srcname, filename, NRow.bytes, NRow.samplerate))
-            except Exception as err:
-                import traceback
-                traceback.print_exc()
-                raise Exception("Error accessing data index: %s" % str(err))
+        try:
+            for NRow in index_rows:
+                srcname = "_".join(NRow[:4])
+                filename = NRow.filename
+
+                logger.debug("EXTRACT: src=%s, file=%s, bytes=%s, rate:%s" %
+                             (srcname, filename, NRow.bytes, NRow.samplerate))
+
+                starttime = UTCDateTime(NRow.requeststart)
+                endtime = UTCDateTime(NRow.requestend)
+                triminfo = self.handle_trimming(starttime, endtime, NRow)
+                total_bytes += triminfo[1][1] - triminfo[0][1]
+                if self.request_limit > 0 and total_bytes > self.request_limit:
+                    raise RequestLimitExceededError("Result exceeds limit of %d bytes" % self.request_limit)
+                if self.dp_replace_re:
+                    filename = self.dp_replace_re.sub(self.dp_replace_sub, filename)
+                if not os.path.exists(filename):
+                    raise Exception("Data file does not exist: %s" % filename)
+                request_rows.append(Request(srcname=srcname,
+                                            filename=filename,
+                                            starttime=starttime,
+                                            endtime=endtime,
+                                            triminfo=triminfo,
+                                            bytes=NRow.bytes,
+                                            samplerate=NRow.samplerate))
+                logger.debug("EXTRACT: src=%s, file=%s, bytes=%s, rate:%s" %
+                             (srcname, filename, NRow.bytes, NRow.samplerate))
+        except Exception as err:
+            import traceback
+            traceback.print_exc()
+            raise Exception("Error accessing data index: %s" % str(err))
 
         # Error if request matches no data
         if total_bytes == 0:
