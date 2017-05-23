@@ -40,14 +40,17 @@
 
     <p>A data selection is composed of a list of network, station, location, channel, start time and end time entries. Channel codes follow the conventions documented in <a href="http://www.fdsn.org/seed_manual/SEEDManual_V2.4_Appendix-A.pdf">Appendix A</a> of the <span class="caps">SEED</span> Manual.  The IRIS DMC has reproduced the appendix for an accessible <a href="http://ds.iris.edu/ds/nodes/dmc/data/formats/seed-channel-naming/">SEED channel naming refrence</a>.</p>
 
-    <!-- These options are not yet supported
-	 <p>Optional parameters allow for more detailed data selection and can include:
-	   <ul>
-	     <li>SEED quality/version, selection of a specific SEED data quality code (defaults to &#8220;best&#8221;)</li>
-	     <li>Minimum segment length, limit data return to segments longer than a specified value</li>
-	     <li>Longest segment only, limit data return to the longest segment per channel</li>
-	 </ul></p>
-         -->
+	  <p>Optional parameters that may be specified:
+	    <ul>
+        <li>'quality': SEED quality/version, selection of a specific SEED data quality code (defaults to &#8220;best&#8221;)</li>
+        <li>'nodata': HTTP response status when no data is available, can be &#8220;204&#8221; or &#8220;404&#8221; (defaults to &#8220;204&#8221;)</li>
+        <li>'format': Data format for response, only &#8220;miniseed&#8221; is allowed.</li>
+        <!-- These options are not yet supported
+    	  <li>Minimum segment length, limit data return to segments longer than a specified value</li>
+	      <li>Longest segment only, limit data return to the longest segment per channel</li>
+        -->
+	    </ul>
+    </p>
 
     <p>An example selection, submitted using HTTP POST, might look like:</p>
 
@@ -57,7 +60,7 @@ IU ANMO 10 HHZ 2010-03-25T00:00:00 2010-04-01T00:00:00
 II KURK 00 BHN 2010-03-25T00:00:00 2010-04-01T00:00:00</pre>
 
     <ul>
-      <li>Glob expressions (wildcards) are allowed in all fields except date fields.</li>
+      <li>Glob expressions (wildcards) are allowed in all identifier fields, use <b>*</b> in the time fields for open.</li>
     </ul>
 
     <h2>wget example</h2>

@@ -42,8 +42,8 @@
 <pre>date-range-options	:: 	(start=&lt;time&gt;) (end=&lt;time&gt;)
 channel-options		:: 	[net=&lt;network&gt;] [sta=&lt;station&gt;] [loc=&lt;location&gt;] [cha=&lt;channel&gt;]
 quality-options		:: 	[quality=&lt;D|R|Q|M|B&gt;]
-misc-options		::	[minimumlength=&lt;seconds&gt;] [longestonly=&lt;true|false&gt;] [repository=&lt;repository_name&gt;]
-format-options          ::      [format=&lt;mseed&gt;]</pre>
+misc-options		::	[nodata=&lt;204|404&gt;]
+format-options          ::      [format=&lt;miniseed&gt;]</pre>
 
 	<p>(..) required<br />
 [..] optional</p>
@@ -52,23 +52,37 @@ format-options          ::      [format=&lt;mseed&gt;]</pre>
 
 	<h2><span class="caps">POST</span> Usage</h2>
 
-	<p>Alternately, <em>instead</em> of providing parameter-value pairs in the <span class="caps">URL</span>, a file containing a selection list can be <span class="caps">POST</span>ed to this service. This is the same method used with the fdsnws-station webservice. For additional details, including an example selection file, visit this page&#8217;s help section.</p>
+	<p>Alternately, <em>instead</em> of providing parameter-value pairs in the <span class="caps">URL</span>, a file containing a selection list can be <span class="caps">POST</span>ed to this service.  For additional details, including an example selection file, visit this page&#8217;s help section.</p>
 
 <pre>quality=&lt;D|R|Q|M|B&gt;
-minimumlength=&lt;seconds&gt;
-longestonly=&lt;true|false&gt;
+nodata=&lt;true|false&gt;
 &lt;Network&gt; &lt;Station&gt; &lt;Location&gt; &lt;Channel&gt; &lt;StartTime&gt; &lt;EndTime&gt;
 ...</pre>
 
-	<p>Quality, minimumlength, and longestonly are optional.  Wildcards are acceptable for Network, Station, Location, and Channel.  Click <a href="#time">here</a> for time format details.</p>
+	<p>Quality, format and nodata are optional.  Wildcards are acceptable for Network, Station, Location, and Channel.  Click <a href="#time">here</a> for time format details.</p>
+
+  <p>For more details and examples on the expected POST format try the <a href="help.html">Help Page</a>.</p>
 
   <h3>Sample Query</h3>
-  	<ul>
+  <ul>
 	  <li><a href="/fdsnws/dataselect/1/query?net=IU&amp;sta=ANMO&amp;loc=00&amp;cha=BHZ&amp;start=2010-02-27T06:30:00.000&amp;end=2010-02-27T10:30:00.000&nodata=404">/fdsnws/dataselect/1/query?net=IU&sta=ANMO&loc=00&cha=BHZ&start=2010-02-27T06:30:00.000&end=2010-02-27T10:30:00.000&nodata=404</a></li>
-          <li>
-            Sample query may not result in data, replace the identifiers and time range to match channel(s) in your data set.
-            </li>
+    <li>
+      Sample query may not result in data, replace the identifiers and time range to match channel(s) in your data set.
+    </li>
 	</ul>
+
+  <h2>Summary Usage</h2>
+  <pre>/summary? [channel-options]</pre>
+
+	<p>where</p>
+
+<pre>channel-options		:: 	[net=&lt;network&gt;] [sta=&lt;station&gt;] [loc=&lt;location&gt;] [cha=&lt;channel&gt;]</pre>
+
+  <h3>Sample Queries</h3>
+  <ul>
+    <li><a href="/fdsnws/dataselect/1/summary?net=IU">/fdsnws/dataselect/1/summary?net=IU</a></li>
+    <li><a href="/fdsnws/dataselect/1/summary">/fdsnws/dataselect/1/summary</a>  (for <i>all</i> channels)</li>
+  </ul>
 
   <h3>Detailed Descriptions of each Query Parameter</h3>
   	<div class="auto-table-scroll-x"><table>
@@ -140,10 +154,10 @@ longestonly=&lt;true|false&gt;
 		</tr>
 		<tr>
 			<td>format</td>
-			<td>mseed</td>
-			<td>Specify the format of the data returned</td>
-			<td>mseed</td>
-			<td>mseed</td>
+			<td>miniseed</td>
+			<td>Specify the format of the data returned, only 'miniseed' is supported.</td>
+			<td>miniseed</td>
+			<td>miniseed</td>
 		</tr>
 	</table></div>
 
@@ -211,7 +225,6 @@ Restricted access is not implemented in this server.
     </a>
   </span>
 </p>
--->
 
 <p>Requests sent to this URL are authenticated via
 <a href="http://en.wikipedia.org/wiki/Digest_access_authentication">
@@ -222,7 +235,7 @@ credential has identical data access permission as the regular submit path's:
     service/fdsnws/dataselect/1/query
   </a>
 </p>
-
+-->
 
   </body>
 </html>
