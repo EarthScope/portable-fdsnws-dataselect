@@ -155,19 +155,7 @@ class DataselectRequest(object):
             else:
                 if k in required:
                     required.remove(k)
-                v = v[0]
-                if k.endswith('time'):
-                    try:
-                        v = normalize_datetime(v)
-                    except QueryError as e:
-                        raise QueryError("Failed to parse '%s': %s" % (k, e))
-                elif k == 'quality':
-                    if v not in ('D', 'R', 'Q', 'M', 'B'):
-                        raise QueryError("quality must be one of B, D, R, M or Q")
-                elif k == 'format':
-                    if v.lower() not in ('miniseed'):
-                        raise QueryError("Unsupported format: '%s'" % v)
-                sql_qry[k] = v
+                sql_qry[k] = v[0]
 
         if len(required) > 0 and self.endpoint != 'summary':
             raise QueryError("Missing parameter%s: %s" % ("" if len(required) == 1 else "s", ", ".join(required)))
@@ -176,14 +164,12 @@ class DataselectRequest(object):
         bulk = []
         for k in BULK_PARAM_KEYS:
             bulk.append("%s=%s" % (k, sql_qry[k]))
-        for n in sql_qry['network'].split(","):
-            for s in sql_qry['station'].split(","):
-                for l in sql_qry['location'].split(","):
-                    if l == '':
-                        l = "--"
-                    for c in sql_qry['channel'].split(","):
-                        bulk.append(" ".join((
-                            n, s, l, c, sql_qry['starttime'], sql_qry['endtime'])))
+        bulk.append(" ".join((sql_qry['network'],
+                              sql_qry['station'],
+                              sql_qry['location'],
+                              sql_qry['channel'],
+                              sql_qry['starttime'],
+                              sql_qry['endtime'])))
 
         return "\n".join(bulk)
 
@@ -200,7 +186,7 @@ class DataselectRequest(object):
         Expected format for the remaining lines is:
           Network Station Location Channel StartTime EndTime
 
-        where the fields are space delimited
+        where the fields are space delimited, can be comma-separated lists,
         and Network, Station, Location and Channel may contain '*' and '?' wildcards
         and StartTime and EndTime are in YYYY-MM-DDThh:mm:ss.ssssss format or are '*'
 
@@ -210,49 +196,81 @@ class DataselectRequest(object):
         '''
         self.query_rows = []
         self.bulk_params = dict(((k, DEFAULT_PARAMS[k]) for k in BULK_PARAM_KEYS))
-        linenumber = 1
-        linematch = re.compile('^[\w\?\*]{1,2}\s+[\w\?\*]{1,5}\s+[-\w\?\*]{1,2}\s+[\w\?\*]{1,3}\s+[-:T.*\d]+\s+[-:T.*\d]+$')
+        idmatch = re.compile('^[-0-9a-zA-Z,?*]+$')
+        timematch = re.compile('^[-:T.*\d]+$')
         inprefix = True
 
-        # Parse the lines
-        for linenumber, line in enumerate(request_text.split('\n')):
+        # Parse the request lines
+        for line in request_text.split('\n'):
             line = line.strip()
 
             # Skip blank or commented-out lines
             if not line or line.startswith("#"):
                 continue
 
-            # Might be a prefix line; if not, assume no others are
+            # Might be a bulk parameter; if not, assume no others are present
             if inprefix:
-                prefix_bits = line.split("=")
-                if len(prefix_bits) == 2:
-                    kind = prefix_bits[0].lower()
-                    if kind in self.bulk_params:
-                        self.bulk_params[kind] = prefix_bits[1]
+                keyval = line.split("=")
+                if len(keyval) == 2:
+                    lkey = keyval[0].lower()
+                    if lkey in self.bulk_params:
+                        self.bulk_params[lkey] = keyval[1]
                         continue
                 inprefix = False
 
-            # Add line to request list if it matches validation regex
-            if linematch.match(line):
-                fields = line.split()
+            # Process "Net Sta Loc Chan Start End" line
+            fields = line.split()
 
-                # Normalize start and end times to "YYYY-MM-DDThh:mm:ss.ffffff" if not wildcards
-                if fields[4] != '*':
+            if len(fields) != 6:
+                raise QueryError("Unrecognized selection line: '{0:s}'".format(line))
+
+            # Validate data identifier fields
+            for idf in fields[:4]:
+                if not idmatch.match(idf):
+                    raise QueryError("Unrecognized selection identifier: '{0:s}'".format(line))
+
+            # Validate time fields
+            for tidx in (4,5):
+                if not timematch.match(fields[tidx]):
+                    raise QueryError("Unrecognized selection time: '{0:s}'".format(line))
+                # Normalize time fields to a strict time format if not wildcards
+                if fields[tidx] != '*':
                     try:
-                        fields[4] = normalize_datetime(fields[4])
+                        fields[tidx] = normalize_datetime(fields[tidx])
                     except Exception:
-                        raise QueryError("Cannot normalize start time (line {0:d}): {1:s}".format(linenumber, fields[4]))
+                        raise QueryError("Cannot normalize time: {0:s}".format(fields[tidx]))
 
-                if fields[5] != '*':
-                    try:
-                        fields[5] = normalize_datetime(fields[5])
-                    except Exception:
-                        raise QueryError("Cannot normalize start time (line {0:d}): {1:s}".format(linenumber, fields[4]))
+            # Expand identifier lists and add selections to list
+            for net in fields[0].split(","):
+                for sta in fields[1].split(","):
+                    for loc in fields[2].split(","):
+                        for cha in fields[3].split(","):
+                            self.query_rows.append([net, sta, loc, cha,
+                                                    fields[4], fields[5]])
 
-                self.query_rows.append(fields)
+        # Validate bulk parameters
+        if self.bulk_params['format'] not in ('miniseed'):
+            raise QueryError("Unsupported format: '%s'" % self.bulk_params['format'])
 
-            else:
-                raise QueryError("Unrecognized selection line ({0:d}): '{1:s}'".format(linenumber, line))
+        if self.bulk_params['nodata'] not in ('204', '404'):
+            raise QueryError("nodata must be one of 204 or 404")
+
+        if self.bulk_params['quality'] not in ('D', 'R', 'Q', 'M', 'B'):
+            raise QueryError("quality must be one of B, D, R, M or Q")
+
+        if self.bulk_params['minimumlength'] != DEFAULT_PARAMS['minimumlength']:
+            raise QueryError("minimumlength is not supported")
+        # Validation if this becomes supported
+        #try:
+        #    float(self.bulk_params['minimumlength'])
+        #except Exception:
+        #    raise QueryError("minimumlength must be a number")
+
+        if self.bulk_params['longestonly'] != DEFAULT_PARAMS['longestonly']:
+            raise QueryError("longestonly is not supported")
+        # Validation if this becomes supported
+        #if self.bulk_params['longestonly'].lower() not in ('true', 'false'):
+        #    raise QueryError("longestonly must be 'true' or 'false'")
 
         if len(self.query_rows) == 0:
-            raise QueryError("No 'N/S/L/C start end' lines present")
+            raise QueryError("No data selection present")

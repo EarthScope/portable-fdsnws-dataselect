@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler
 import os.path
 import time
 from portable_fdsnws_dataselect import pkg_path, version
-from logging import getLogger
+from logging import getLogger, DEBUG
 from portable_fdsnws_dataselect.request import DataselectRequest, QueryError, NonQueryURLError
 import socket
 from portable_fdsnws_dataselect.miniseed import NoDataError, RequestLimitExceededError
@@ -200,6 +200,12 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
         request_time = time.time()
         request_time_str = UTCDateTime(int(request_time)).isoformat() + "Z"
+
+        if logger.isEnabledFor(DEBUG):
+            for key in request.bulk_params.keys():
+                logger.debug("REQUEST: %s = %s" % (key, request.bulk_params[key]))
+            for row in request.query_rows:
+                logger.debug("REQUEST: %s" % " ".join(row))
 
         # Get the corresponding index DB entries
         try:

@@ -228,7 +228,7 @@ class MiniseedDataExtractor(object):
                                                 triminfo=triminfo,
                                                 bytes=NRow.bytes,
                                                 samplerate=NRow.samplerate))
-                    logger.debug("REQUEST: src=%s, file=%s, bytes=%s, rate:%s" %
+                    logger.debug("EXTRACT: src=%s, file=%s, bytes=%s, rate:%s" %
                                  (srcname, filename, NRow.bytes, NRow.samplerate))
             except Exception as err:
                 import traceback
