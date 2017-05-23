@@ -6,10 +6,12 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 from future.builtins import *  # NOQA
 from future.backports.urllib.parse import parse_qs, urlparse
-from logging import getLogger
+
 import os.path
 import datetime
 import re
+
+from logging import getLogger
 from portable_fdsnws_dataselect import version, pkg_path
 
 logger = getLogger(__name__)
@@ -230,7 +232,7 @@ class DataselectRequest(object):
                     raise QueryError("Unrecognized selection identifier: '{0:s}'".format(line))
 
             # Validate time fields
-            for tidx in (4,5):
+            for tidx in (4, 5):
                 if not timematch.match(fields[tidx]):
                     raise QueryError("Unrecognized selection time: '{0:s}'".format(line))
                 # Normalize time fields to a strict time format if not wildcards

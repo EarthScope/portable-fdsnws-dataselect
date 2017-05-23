@@ -7,11 +7,14 @@ Version 2017.114
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 from future.builtins import *  # NOQA
+
 import ctypes as C
 import os
+
 from obspy import UTCDateTime
 from obspy.io.mseed.headers import (HPTMODULUS, MS_NOERROR, MS_ENDOFFILE,
                                     MSFileParam, MSRecord, clibmseed)
+
 
 class MSR_iterator(object):
     """
@@ -80,8 +83,8 @@ class MSR_iterator(object):
             self.fpos = self._c_off_t(-startoffset)
 
         self.reclen = reclen
-        self.dataflag = 1 if dataflag == True else 0
-        self.skipnotdata = 1 if skipnotdata == True else 0
+        self.dataflag = 1 if dataflag else 0
+        self.skipnotdata = 1 if skipnotdata else 0
         self.verbose = verbose
         self.raise_errors = raise_errors
 
@@ -123,7 +126,9 @@ class MSR_iterator(object):
         """
         srcname = C.create_string_buffer(50)
 
-        clibmseed.msr_srcname.argtypes = [C.POINTER(MSRecord),C.POINTER(C.c_char), C.c_int]
+        clibmseed.msr_srcname.argtypes = [C.POINTER(MSRecord),
+                                          C.POINTER(C.c_char),
+                                          C.c_int]
         clibmseed.msr_srcname.restype = C.POINTER(C.c_char)
 
         if quality:

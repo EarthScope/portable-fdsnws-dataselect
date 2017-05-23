@@ -4,27 +4,28 @@ HTTP request handler
 """
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
-from future.builtins import *  # NOQA
 from future.standard_library import install_aliases
 install_aliases()
-from urllib.parse import urlparse, urlencode
+from future.builtins import *  # NOQA
+from future.backports.http.server import SimpleHTTPRequestHandler
 
-from collections import namedtuple
-import sqlite3
-import re
-import datetime
-from obspy.core.utcdatetime import UTCDateTime
-from obspy.core.stream import Stream
-import uuid
-from http.server import BaseHTTPRequestHandler
 import os.path
 import time
-from portable_fdsnws_dataselect import pkg_path, version
-from logging import getLogger, DEBUG
-from portable_fdsnws_dataselect.request import DataselectRequest, QueryError, NonQueryURLError
+import re
+import datetime
+import sqlite3
+import uuid
 import socket
+
+from logging import getLogger, DEBUG
+from http.server import BaseHTTPRequestHandler
+from urllib.parse import urlparse, urlencode
+from collections import namedtuple
+from obspy.core.utcdatetime import UTCDateTime
+from obspy.core.stream import Stream
+from portable_fdsnws_dataselect import pkg_path, version
+from portable_fdsnws_dataselect.request import DataselectRequest, QueryError, NonQueryURLError
 from portable_fdsnws_dataselect.miniseed import NoDataError, RequestLimitExceededError
-from future.backports.http.server import SimpleHTTPRequestHandler
 
 logger = getLogger(__name__)
 
@@ -80,7 +81,8 @@ Request Submitted:
 
 Service version:
 Service: fdsnws-dataselect  version %d.%d.%d
-''' % (code, http_msgs[code], err_msg, self.prefix, self.format_host(), datetime.datetime.now().isoformat(), version[0], version[1], version[2])
+''' % (code, http_msgs[code], err_msg, self.prefix, self.format_host(),
+       datetime.datetime.now().isoformat(), version[0], version[1], version[2])
         self.send_response(code)
         self.send_header('Content-type', 'text/plain')
         self.send_header('Connection', 'close')
@@ -378,7 +380,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
                            self.server.params['maxsectiondays']))
 
             # Add quality identifer criteria
-            if 'quality' in bulk_params and bulk_params['quality'] in ('D','R','Q'):
+            if 'quality' in bulk_params and bulk_params['quality'] in ('D', 'R', 'Q'):
                 sql = sql + " AND quality = '{0}' ".format(bulk_params['quality'])
 
             cur.execute(sql)
@@ -389,12 +391,12 @@ Service: fdsnws-dataselect  version %d.%d.%d
             raise ValueError(str(err))
 
         # Map raw tuples to named tuples for clear referencing
-        NamedRow = namedtuple ('NamedRow',
-                               ['network','station','location','channel','quality',
-                                'starttime','endtime','samplerate','filename',
-                                'byteoffset','bytes','hash','timeindex','timespans',
-                                'timerates','format','filemodtime','updated','scanned',
-                                'requeststart','requestend'])
+        NamedRow = namedtuple('NamedRow',
+                              ['network', 'station', 'location', 'channel', 'quality',
+                               'starttime', 'endtime', 'samplerate', 'filename',
+                               'byteoffset', 'bytes', 'hash', 'timeindex', 'timespans',
+                               'timerates', 'format', 'filemodtime', 'updated', 'scanned',
+                               'requeststart', 'requestend'])
 
         index_rows = []
         while True:
@@ -540,9 +542,9 @@ Service: fdsnws-dataselect  version %d.%d.%d
                 raise ValueError(str(err))
 
             # Map raw tuples to named tuples for clear referencing
-            NamedRow = namedtuple ('NamedRow',
-                                   ['network','station','location','channel',
-                                    'earliest','latest','updated'])
+            NamedRow = namedtuple('NamedRow',
+                                  ['network', 'station', 'location', 'channel',
+                                   'earliest', 'latest', 'updated'])
 
             summary_rows = []
             while True:

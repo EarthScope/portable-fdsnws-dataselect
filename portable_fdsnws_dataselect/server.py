@@ -1,25 +1,26 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 from future.builtins import *  # NOQA
-from socketserver import ThreadingMixIn
-from queue import Queue
+
 import threading
 import sqlite3
 import logging.config
 import argparse
-from http.server import HTTPServer
 import os
-from platform import python_version
-
-from portable_fdsnws_dataselect import pkg_path, version
-from portable_fdsnws_dataselect.handler import HTTPServer_RequestHandler
 import socket
 import base64
 import sys
-from configparser import ConfigParser
-from portable_fdsnws_dataselect.miniseed import MiniseedDataExtractor
+
 from logging import getLogger
+from http.server import HTTPServer
+from socketserver import ThreadingMixIn
+from queue import Queue
+from platform import python_version
+from configparser import ConfigParser
 from shutil import copyfile
+from portable_fdsnws_dataselect import pkg_path, version
+from portable_fdsnws_dataselect.handler import HTTPServer_RequestHandler
+from portable_fdsnws_dataselect.miniseed import MiniseedDataExtractor
 
 logger = getLogger(__name__)
 
@@ -112,9 +113,11 @@ def run_server(params):
 
     server.serve_forever()
 
+
 class ConfigError(Exception):
     def __init__(self, message):
         self.message = message
+
 
 def verify_configuration(params, level=0):
     '''Verify the server's configuration.
@@ -146,11 +149,15 @@ def verify_configuration(params, level=0):
         index_schema[row[1].lower()] = row[2].lower()
 
     # Definition of time series index schema version 1.0
-    index_version10 = {'network':'text', 'station':'text', 'location':'text', 'channel':'text', 'quality':'text',
-                        'starttime':'text', 'endtime':'text', 'samplerate':'real', 'filename':'text',
-                        'byteoffset':'integer', 'bytes':'integer', 'hash':'text', 'timeindex':'text',
-                        'timespans':'text', 'timerates':'text', 'format':'text', 'filemodtime':'text',
-                        'updated':'text', 'scanned':'text'}
+    index_version10 = {'network': 'text', 'station': 'text', 'location': 'text',
+                       'channel': 'text', 'quality': 'text',
+                       'starttime': 'text', 'endtime': 'text',
+                       'samplerate': 'real', 'filename': 'text',
+                       'byteoffset': 'integer', 'bytes': 'integer',
+                       'hash': 'text', 'timeindex': 'text',
+                       'timespans': 'text', 'timerates': 'text',
+                       'format': 'text', 'filemodtime': 'text',
+                       'updated': 'text', 'scanned': 'text'}
 
     # Index table schema is version 1.0
     if index_schema != index_version10:
@@ -169,8 +176,10 @@ def verify_configuration(params, level=0):
             summary_schema[row[1].lower()] = row[2].lower() if row[2] != '' else 'text'
 
         # Definition of summary schema version 1.0
-        summary_version10 = {'network':'text', 'station':'text', 'location':'text', 'channel':'text',
-                             'earliest':'text', 'latest':'text', 'updt':'text'}
+        summary_version10 = {'network': 'text', 'station': 'text',
+                             'location': 'text', 'channel': 'text',
+                             'earliest': 'text', 'latest': 'text',
+                             'updt': 'text'}
 
         # Summary table schema is version 1.0
         if summary_schema != summary_version10:
@@ -210,8 +219,8 @@ def main():
 
     # Print versions
     if args.version:
-        print ('portable-fdsnws-dataselect %s' % ".".join(str(i) for i in version))
-        print ('Running under Python %s' % python_version())
+        print('portable-fdsnws-dataselect %s' % ".".join(str(i) for i in version))
+        print('Running under Python %s' % python_version())
         sys.exit(0)
 
     # Print sample configuration file

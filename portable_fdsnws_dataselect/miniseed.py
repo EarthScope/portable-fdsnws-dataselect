@@ -1,21 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-Data extraction and transfer from Miniseed files
+Data extraction and transfer from miniSEED files
 """
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 from future.builtins import *  # NOQA
-from collections import namedtuple
-from obspy.core import UTCDateTime
-import bisect
-from portable_fdsnws_dataselect.msriterator import MSR_iterator
-from logging import getLogger
-from obspy import read as mseed_read
-from io import BytesIO
-import ctypes
-from obspy.core.stream import Stream
+
 import re
 import os
+import ctypes
+import bisect
+
+from logging import getLogger
+from collections import namedtuple
+from io import BytesIO
+from obspy import read as mseed_read
+from obspy.core import UTCDateTime
+from obspy.core.stream import Stream
+from portable_fdsnws_dataselect.msriterator import MSR_iterator
 
 logger = getLogger(__name__)
 
@@ -161,10 +163,12 @@ class MiniseedDataExtractor(object):
         """
         Get the time & byte-offsets for the data in time range (stime, etime).
 
-        This is done by finding the smallest section of the data in row that falls within the desired time range
-        and is identified by the timeindex field of row
+        This is done by finding the smallest section of the data in row that
+        falls within the desired time range and is identified by the timeindex
+        field of row.
 
-        :returns: [(start time, start offset), (end time, end offset)]
+        :returns: [(start time, start offset, trim_boolean),
+                   (end time, end offset, trim_boolean)]
         """
         etime = UTCDateTime(NRow.requestend)
         row_stime = UTCDateTime(NRow.starttime)
@@ -186,9 +190,11 @@ class MiniseedDataExtractor(object):
             if e_index >= len(tix):
                 e_index = -1
             off_end = int(tix[e_index][1])
-            return ([to_x[s_index], off_start, stime > row_stime], [to_x[e_index], off_end, etime < row_etime],)
+            return ([to_x[s_index], off_start, stime > row_stime],
+                    [to_x[e_index], off_end, etime < row_etime],)
         else:
-            return ([row_stime.timestamp, block_start, False], [row_etime.timestamp, block_end, False])
+            return ([row_stime.timestamp, block_start, False],
+                    [row_etime.timestamp, block_end, False])
 
     def extract_data(self, index_rows):
         """
@@ -241,19 +247,23 @@ class MiniseedDataExtractor(object):
 
         # Get & return the actual data
         for NRow in request_rows:
-            logger.debug("Extracting %s (%s - %s) from %s" % (NRow.srcname, NRow.starttime, NRow.endtime, NRow.filename))
+            logger.debug("Extracting %s (%s - %s) from %s" % (NRow.srcname, NRow.starttime,
+                                                              NRow.endtime, NRow.filename))
 
             # Iterate through records in section if only part of the section is needed
             if NRow.triminfo[0][2] or NRow.triminfo[1][2]:
 
-                for msri in MSR_iterator(filename=NRow.filename, startoffset=NRow.triminfo[0][1], dataflag=False):
+                for msri in MSR_iterator(filename=NRow.filename,
+                                         startoffset=NRow.triminfo[0][1],
+                                         dataflag=False):
                     offset = msri.get_offset()
 
                     # Done if we are beyond end offset
                     if offset >= NRow.triminfo[1][1]:
                         break
 
-                    yield MSRIDataSegment(msri, NRow.samplerate, NRow.starttime, NRow.endtime, NRow.srcname)
+                    yield MSRIDataSegment(msri, NRow.samplerate, NRow.starttime,
+                                          NRow.endtime, NRow.srcname)
 
                     # Check for passing end offset
                     if (offset + msri.msr.contents.reclen) >= NRow.triminfo[1][1]:
@@ -261,4 +271,5 @@ class MiniseedDataExtractor(object):
 
             # Otherwise, return the entire section
             else:
-                yield FileDataSegment(NRow.filename, NRow.triminfo[0][1], NRow.bytes, NRow.srcname)
+                yield FileDataSegment(NRow.filename, NRow.triminfo[0][1],
+                                      NRow.bytes, NRow.srcname)
