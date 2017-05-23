@@ -185,6 +185,11 @@ Service: fdsnws-dataselect  version %d.%d.%d
                 self.wfile.write(summary_row.encode("utf8"))
             return
         elif request.endpoint == 'queryauth':
+            self.return_error(403, "Authorization via the 'queryauth' endpoint not implemented")
+
+            # The code stubs below remains for future reference.
+            # Per the FDSN spec, HTTP Digest Authorization is required,
+            # not the HTTP Basic Authorization below.
             key = self.server.get_auth_key()
             if self.headers.get('Authorization') is None:
                 # Need authorization
