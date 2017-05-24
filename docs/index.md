@@ -44,11 +44,11 @@ server we recommend installing
     bash Miniconda3-latest-MacOSX-x86_64.sh -p miniconda3 -b
     ```
 
-3. Add the conda-forge channel, install ObsPy and make sure future and requests are installed:
+3. Add the conda-forge channel, install pip and ObsPy:
 
     ```
     miniconda3/bin/conda config --add channels conda-forge
-    miniconda3/bin/conda install -y pip obspy future requests
+    miniconda3/bin/conda install -y pip obspy
     ```
 
 ### Install the server from [PyPI](https://pypi.python.org/pypi) using `pip`
