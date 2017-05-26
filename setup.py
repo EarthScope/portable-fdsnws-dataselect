@@ -131,7 +131,8 @@ setup(
     # installed, specify them here.  If using Python 2.6 or less, then these
     # have to be included in MANIFEST.in as well.
     package_data={
-        module_name: ['docs/index.html','docs/help.html','example/server.ini'],
+        module_name: ['docs/index.html', 'docs/help.html', 'docs/style.css',
+                      'docs/application.wadl', 'example/server.ini'],
     },
 
     # To provide executable scripts, use entry points in preference to the
