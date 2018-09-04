@@ -159,8 +159,19 @@ def verify_configuration(params, level=0):
                        'format': 'text', 'filemodtime': 'text',
                        'updated': 'text', 'scanned': 'text'}
 
+    # Definition of time series index schema version 1.1
+    index_version11 = {'network': 'text', 'station': 'text', 'location': 'text',
+                       'channel': 'text', 'quality': 'text', 'version' : 'integer',
+                       'starttime': 'text', 'endtime': 'text',
+                       'samplerate': 'real', 'filename': 'text',
+                       'byteoffset': 'integer', 'bytes': 'integer',
+                       'hash': 'text', 'timeindex': 'text',
+                       'timespans': 'text', 'timerates': 'text',
+                       'format': 'text', 'filemodtime': 'text',
+                       'updated': 'text', 'scanned': 'text'}
+
     # Index table schema is version 1.0
-    if index_schema != index_version10:
+    if index_schema != index_version10 and index_schema != index_version11:
         raise ConfigError("Schema for index table %s is not recognized" % params['index_table'])
 
     if 'summary_table' in params:
