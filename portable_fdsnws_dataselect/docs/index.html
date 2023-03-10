@@ -5,11 +5,8 @@
       <title>Portable-FDSNWS-Dataselect Service Interface</title>
 
   <meta name="keywords" content="seismology, seismological data,
-  earthquakes, iris dmc" />
-  <meta name="description" content="IRIS is a consortium of
-  universities dedicated to the operation of science facilities
-  for the acquisition, management, and distribution of seismological
-  data." />
+  earthquakes, EarthScope" />
+  <meta name="description" content="EarthScope Consortium is a university consortium dedicated to transforming global geophysical research and education." />
   <!-- Forces IE to render in 'latest' compatible mode -->
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -28,7 +25,7 @@
 
     <p>The <strong>fdsnws-dataselect</strong> service provides access to time series data for specified channels and time ranges.</p>
 
-	<p>Data are selected using <a href="http://ds.iris.edu/ds/nodes/dmc/data/formats/seed/#data-identification-nomenclature">SEED</a> time series identifiers (network, station, location &amp; channel) in addition to time ranges.  Data are returned in <a href="http://ds.iris.edu/ds/nodes/dmc/data/formats/seed/#miniseed">miniSEED</a> format.</p>
+	<p>Data are selected using <a href="http://docs.fdsn.org/projects/source-identifiers">FDSN Source Identifier</a> codes (network, station, location &amp; channel) in addition to time ranges.  Data are returned in miniSEED format.</p>
 
 	<p>This service is an implementation of the <a href="http://www.fdsn.org/webservices/">FDSN web service specification</a> version 1.</p>
 
@@ -217,8 +214,7 @@ Multiple items may also be retrieved using a comma separated list. Wildcards may
 
 Restricted access is not implemented in this server.
 <!--
-<p>For access to <a href="http://ds.iris.edu/ds/nodes/dmc/data/types/restricted/">restricted</a>
-  data, requests should be sent to:
+<p>For access to restricted data, requests should be sent to:
   <span class="label label-warning">
     <a href="/fdsnws/dataselect/1/queryauth">
       service/fdsnws/dataselect/1/queryauth

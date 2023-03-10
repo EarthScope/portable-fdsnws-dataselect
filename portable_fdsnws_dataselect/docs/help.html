@@ -24,7 +24,7 @@
 
     <p>The <strong>fdsnws-dataselect</strong> service provides access to time series data for specified channels and time ranges.</p>
 
-    <p>Data are selected using <a href="http://ds.iris.edu/ds/nodes/dmc/data/formats/seed/">SEED</a> time series identifiers (network, station, location &amp; channel) in addition to time ranges.  Data are returned in <a href="http://ds.iris.edu/ds/nodes/dmc/data/formats/seed/">miniSEED</a> format.</p>
+    <p>Data are selected using <a href="http://docs.fdsn.org/projects/source-identifiers">FDSN Source Identifier</a> codes (network, station, location &amp; channel) in addition to time ranges.  Data are returned in miniSEED format.</p>
 
     <p>This service is an implementation of the <a href="http://www.fdsn.org/webservices/">FDSN web service specification</a> version 1.</p>
 
@@ -38,7 +38,8 @@
 
     <h2 id="dataselection">Data selection</h2>
 
-    <p>A data selection is composed of a list of network, station, location, channel, start time and end time entries. Channel codes follow the conventions documented in <a href="http://www.fdsn.org/seed_manual/SEEDManual_V2.4_Appendix-A.pdf">Appendix A</a> of the <span class="caps">SEED</span> Manual.  The IRIS DMC has reproduced the appendix for an accessible <a href="http://ds.iris.edu/ds/nodes/dmc/data/formats/seed-channel-naming/">SEED channel naming refrence</a>.</p>
+    <p>A data selection is composed of a list of network, station, location, channel, start time and end time criteria. The data identifier codes are maintained and defined by the FDSN in the <a href="http://docs.fdsn.org/projects/source-identifiers/en/v1.0/definition.html">Source Identifiers</a> specification.
+    </p>
 
 	  <p>Optional parameters that may be specified:
 	    <ul>
@@ -107,16 +108,17 @@ TA A25A -- BHE 2010-03-25T00:00:00 2010-04-01T00:00:00</pre>
 
     <p>A variety of software tools are available from the DMC to assist with organizing and viewing miniSEED data or converting it to another format.  Detailed descriptions and usage examples for each piece of software can be found by clicking the links below.  </p>
 
-    <p><a href="https://github.com/iris-edu/mseed2sac">mseed2sac</a> &#8211; for converting miniSEED to <span class="caps">SAC</span> format<br />
-      <a href="https://github.com/iris-edu/mseed2ascii">mseed2ascii</a> &#8211; for converting miniSEED to <span class="caps">ASCII</span> formats<br />
-      <a href="https://github.com/iris-edu/dataselect">dataselect</a> &#8211; for selecting and sorting miniSEED<br />
-      <a href="https://github.com/iris-edu/msi">miniSEED Inspector</a> &#8211; for quickly parsing and summarizing miniSEED data<br />
+    <p><a href="https://github.com/earthscope/mseed2sac">mseed2sac</a> &#8211; for converting miniSEED to <span class="caps">SAC</span> format<br />
+      <a href="https://github.com/earthscope/mseed2ascii">mseed2ascii</a> &#8211; for converting miniSEED to <span class="caps">ASCII</span> formats<br />
+      <a href="https://github.com/earthscope/dataselect">dataselect</a> &#8211; for selecting and sorting miniSEED<br />
+      <a href="https://github.com/earthscope/msi">miniSEED Inspector</a> &#8211; for quickly parsing and summarizing miniSEED data<br />
 
     <h2 id="restricteddata">Accessing restricted data</h2>
 
     Restricted access is not implemented in this server.
     <!--
-    <p>Requesting restricted data via this web service requires authentication.  The authentication is done using a standard <span class="caps">HTTP</span> mechanism called <a href="https://en.wikipedia.org/wiki/Digest_access_authentication">digest access authentication</a>, using a 3-way handshake.  To submit a request with authentication credentials you would use the <code>queryauth</code> method of the service in place of the <code>query</code> method.  You must use a client that supports digest authentication, luckily such support is common.  All of the <a href="http://service.iris.edu/clients/"><span class="caps">IRIS</span> <span class="caps">DMC</span>&#8217;s clients</a> support accessing restricted data through digest authentication.</p>
+    <p>Requesting restricted data via this web service requires authentication.  The authentication is done using a standard <span class="caps">HTTP</span> mechanism called <a href="https://en.wikipedia.org/wiki/Digest_access_authentication">digest access authentication</a>, using a 2-way handshake.  To submit a request with authentication credentials you would use the <code>queryauth</code> method of the service in place of the <code>query</code> method.  You must use a client that supports digest authentication, luckily such support is common.  
+   </p>
 
     <p>For example, submitting a request and subsequently initiating the authentication handshake would be done by requesting this <span class="caps">URL</span>:</p>
 
