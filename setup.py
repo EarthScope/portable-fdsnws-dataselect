@@ -85,7 +85,7 @@ setup(
     author_email='chad.trabant@earthscope.org',
 
     # Choose your license
-    license='LGPL 3.0',
+    license='APLv2',
 
     # See https://pypi.python.org/pypi?%3Aaction=list_classifiers
     classifiers=[
@@ -104,7 +104,7 @@ setup(
         'Topic :: Scientific/Engineering :: Physics',
 
         # Pick your license as you wish (should match "license" above)
-        'License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)',
+        'License :: OSI Approved :: Apache Software License v2 (APLv2)',
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
