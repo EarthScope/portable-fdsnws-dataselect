@@ -12,9 +12,9 @@ with the `mseedindex`_ program.
 The specification for the `fdsnws-dataselect`_ web service is published by
 the `International Federation of Digital Seismograph Networks`_.
 
-This software is a product of the `IRIS Data Management Center`_.
+This software is a product of the `EarthScope Data Services`_.
 
-.. _mseedindex: https://github.com/iris-edu/mseedindex
-.. _fdsnws-dataselect: http://www.fdsn.org/webservices
-.. _International Federation of Digital Seismograph Networks: http://www.fdsn.org/
-.. _IRIS Data Management Center: http://ds.iris.edu/
+.. _mseedindex: https://github.com/earthscope/mseedindex
+.. _fdsnws-dataselect: https://www.fdsn.org/webservices
+.. _International Federation of Digital Seismograph Networks: https://www.fdsn.org/
+.. _EarthScope Data Services: https://www.earthscope.org/

@@ -78,11 +78,11 @@ setup(
     long_description=long_description,
 
     # The project's main homepage.
-    url='https://iris-edu.github.io/portable-fdsnws-dataselect/',
+    url='https://earthscope.github.io/portable-fdsnws-dataselect/',
 
     # Author details
-    author='IRIS DMC',
-    author_email='software-owner@iris.washington.edu',
+    author='EarthScope Data Services',
+    author_email='chad.trabant@earthscope.org',
 
     # Choose your license
     license='LGPL 3.0',
@@ -115,7 +115,7 @@ setup(
     ],
 
     # What does your project relate to?
-    keywords='FDSN webservice IRIS miniSEED',
+    keywords='FDSN webservice EarthScope miniSEED',
 
     # You can just specify the packages manually here if your project is
     # simple. Or you can use find_packages().
