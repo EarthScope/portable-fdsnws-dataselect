@@ -87,7 +87,7 @@ class MSRIDataSegment(ExtractedDataSegment):
         eepoch = self.end_time.timestamp
 
         # Process records that intersect with request time window
-        if msrstart < eepoch and msrend > sepoch:
+        if msrstart <= eepoch and msrend >= sepoch:
 
             # Trim record if coverage and partial overlap with request
             if self.sample_rate > 0 and (msrstart < self.start_time or msrend > self.end_time):
@@ -170,7 +170,7 @@ class MiniseedDataExtractor(object):
         :returns: [(start time, start offset, trim_boolean),
                    (end time, end offset, trim_boolean)]
         """
-        etime = UTCDateTime(NRow.requestend)
+
         row_stime = UTCDateTime(NRow.starttime)
         row_etime = UTCDateTime(NRow.endtime)
 
@@ -182,7 +182,7 @@ class MiniseedDataExtractor(object):
             if tix[-1][0] == 'latest':
                 tix[-1] = [str(row_etime.timestamp), block_end]
             to_x = [float(x[0]) for x in tix]
-            s_index = bisect.bisect_right(to_x, stime.timestamp) - 1
+            s_index = bisect.bisect_left(to_x, stime.timestamp) - 1
             if s_index < 0:
                 s_index = 0
             e_index = bisect.bisect_right(to_x, etime.timestamp)
@@ -222,6 +222,26 @@ class MiniseedDataExtractor(object):
 
                 starttime = UTCDateTime(NRow.requeststart)
                 endtime = UTCDateTime(NRow.requestend)
+
+                #Fix from M Hagerty:
+                # requeststart/end is a string - creating UTCDateTime using a string is
+                #     susceptible to round-off issues, e.g., seconds = 10.65  gets stored as 10.6499999
+                #     in etime.timestamp and then compared to the row start/end epochs
+                # This is a hack to fix this, under the assumption that the final fractional
+                #  second (e.g., 1 microsecond) should be 0 and not significant
+
+                secs = int(starttime.timestamp)
+                microsecs = int((starttime.timestamp - secs) * 1e6)
+                if microsecs % 10:
+                    microsecs += 1
+                starttime = UTCDateTime(secs + float(microsecs)/1e6)
+
+                secs = int(endtime.timestamp)
+                microsecs = int((endtime.timestamp - secs) * 1e6)
+                if microsecs % 10:
+                    microsecs += 1
+                endtime = UTCDateTime(secs + float(microsecs)/1e6)
+
                 triminfo = self.handle_trimming(starttime, endtime, NRow)
                 total_bytes += triminfo[1][1] - triminfo[0][1]
                 if self.request_limit > 0 and total_bytes > self.request_limit:
