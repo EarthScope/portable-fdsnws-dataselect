@@ -2,10 +2,7 @@
 """
 HTTP request handler
 """
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-from future.builtins import *  # NOQA
-from future.backports.urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse
 
 import os.path
 import datetime

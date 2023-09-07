@@ -2,9 +2,6 @@
 """
 HTTP request handler
 """
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-from future.builtins import *  # NOQA
 import unittest
 from portable_fdsnws_dataselect.request import DataselectRequest, QueryError
 from portable_fdsnws_dataselect import version
