@@ -4,9 +4,6 @@ Convenience class for iterating over miniSEED records in a file.
 
 Version 2017.114
 """
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-from future.builtins import *  # NOQA
 
 import ctypes as C
 import os
@@ -49,8 +46,6 @@ class MSR_iterator(object):
     `ctypes.string_at(MSR_iterator.msr.contents.record, MSR_iterator.msr.contents.reclen))
 
     .. rubric:: Example
-
-    from future.builtins import *
 
     from msriterator import MSR_iterator
 

@@ -2,12 +2,7 @@
 """
 HTTP request handler
 """
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-from future.standard_library import install_aliases
-install_aliases()
-from future.builtins import *  # NOQA
-from future.backports.http.server import SimpleHTTPRequestHandler
+from http.server import SimpleHTTPRequestHandler
 
 import os.path
 import time
