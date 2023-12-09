@@ -80,6 +80,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
        datetime.datetime.now().isoformat(), version[0], version[1], version[2])
         self.send_response(code)
         self.send_header('Content-type', 'text/plain')
+        self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Connection', 'close')
         self.end_headers()
         self.wfile.write(msg.encode("utf8"))
@@ -91,6 +92,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         """
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
+        self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
         message = "%d.%d.%d\n" % version
         self.wfile.write(message.encode("utf8"))
@@ -101,6 +103,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
         """
         self.send_response(200)
         self.send_header('Content-type', 'application/xml')
+        self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
         server_port = ""
         if self.server.server_port != 80:
@@ -168,6 +171,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
 
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain')
+            self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
 
             summary = "#{0:<7s}{1:<8s}{2:<8s}{3:<8s}{4:<28s}{5:<28s}{6:<20s}\n".format(
@@ -230,6 +234,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
                     # If this is the first segment to be written, add the response headers first
                     if total_bytes == 0:
                         self.send_response(200)
+                        self.send_header('Access-Control-Allow-Origin', '*')
                         self.send_header('Content-Type', 'application/vnd.fdsn.mseed')
                         self.send_header('Content-Disposition',
                                          'attachment; filename=fdsnws-dataselect_%s.mseed' % request_time_str)
