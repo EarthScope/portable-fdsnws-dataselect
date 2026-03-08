@@ -41,7 +41,7 @@ portable-fdsnws-dataselect = "portable_fdsnws_dataselect.server:main"
 version = { attr = "portable_fdsnws_dataselect.__version__" }
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src"]
 include = ["portable_fdsnws_dataselect*"]
 
 [tool.setuptools.package-data]
