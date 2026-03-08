@@ -5,15 +5,11 @@ Data extraction and transfer from miniSEED files
 
 import re
 import os
-import ctypes
 import bisect
 
 from logging import getLogger
 from collections import namedtuple
-from io import BytesIO
-from obspy import read as mseed_read
-from obspy.core import UTCDateTime
-from obspy.core.stream import Stream
+from pymseed import MS3Record, NSTMODULUS, sample_time, timestr2nstime
 from portable_fdsnws_dataselect.msriterator import MSR_iterator
 
 logger = getLogger(__name__)
@@ -65,8 +61,8 @@ class MSRIDataSegment(ExtractedDataSegment):
         """
         :param msri: A `MSR_iterator`
         :param sample_rate: Sample rate of the data
-        :param start_time: A `UTCDateTime` giving the start of the requested data
-        :param end_time: A `UTCDateTime` giving the end of the requested data
+        :param start_time: Start of the requested data as nanoseconds since Unix epoch
+        :param end_time: End of the requested data as nanoseconds since Unix epoch
         :param src_name: Name of the data source for logging
         """
         self.msri = msri
@@ -78,33 +74,61 @@ class MSRIDataSegment(ExtractedDataSegment):
     def write(self, wfile):
         msrstart = self.msri.get_startepoch()
         msrend = self.msri.get_endepoch()
-        reclen = self.msri.msr.contents.reclen
 
-        sepoch = self.start_time.timestamp
-        eepoch = self.end_time.timestamp
+        sepoch = self.start_time / NSTMODULUS
+        eepoch = self.end_time / NSTMODULUS
 
         # Process records that intersect with request time window
         if msrstart <= eepoch and msrend >= sepoch:
 
             # Trim record if coverage and partial overlap with request
-            if self.sample_rate > 0 and (msrstart < self.start_time or msrend > self.end_time):
+            if self.sample_rate > 0 and (msrstart < sepoch or msrend > eepoch):
                 logger.debug("Trimming record %s @ %s" % (self.src_name, self.msri.get_starttime()))
-                tr = mseed_read(BytesIO(ctypes.string_at(self.msri.msr.contents.record, reclen)), format="MSEED")[0]
-                tr.trim(self.start_time, self.end_time)
-                st = Stream(traces=[tr])
 
-                st.write(wfile, format="MSEED")
+                record_bytes = self.msri.msr.record
+                for rec in MS3Record.from_buffer(record_bytes, unpack_data=True):
+                    period_ns = rec.samprate_period_ns
+                    rec_start_ns = rec.starttime
+                    rec_end_ns = rec.endtime
+
+                    # First sample at or after requested start (ceiling division)
+                    if self.start_time > rec_start_ns:
+                        start_idx = -(-(self.start_time - rec_start_ns) // period_ns)
+                    else:
+                        start_idx = 0
+
+                    # Last sample at or before requested end (floor division)
+                    if self.end_time < rec_end_ns:
+                        end_idx = (self.end_time - rec_start_ns) // period_ns
+                    else:
+                        end_idx = rec.numsamples - 1
+
+                    if start_idx > end_idx or start_idx >= rec.numsamples:
+                        return
+
+                    trimmed_samples = list(rec.datasamples[start_idx:end_idx + 1])
+                    new_starttime = sample_time(rec_start_ns, start_idx, rec.samprate)
+
+                    out_rec = MS3Record()
+                    out_rec.sourceid = rec.sourceid
+                    out_rec.starttime = new_starttime
+                    out_rec.samprate = rec.samprate_raw
+                    out_rec.encoding = rec.encoding
+                    out_rec.pubversion = rec.pubversion
+                    out_rec.formatversion = rec.formatversion
+                    out_rec.reclen = rec.reclen
+
+                    for packed_record in out_rec.generate(
+                            data_samples=trimmed_samples, sample_type=rec.sampletype):
+                        wfile.write(packed_record)
 
             # Otherwise, write un-trimmed record
             else:
-                # Construct to avoid copying the data, supposedly
                 logger.debug("Writing full record %s @ %s" % (self.src_name, self.msri.get_starttime()))
-                out = (ctypes.c_char * reclen).from_address(
-                    ctypes.addressof(self.msri.msr.contents.record.contents))
-                wfile.write(out.raw)
+                wfile.write(bytes(self.msri.msr.record_mv))
 
     def get_num_bytes(self):
-        return self.msri.msr.contents.reclen
+        return self.msri.msr.reclen
 
     def get_src_name(self):
         return self.src_name
@@ -164,12 +188,14 @@ class MiniseedDataExtractor(object):
         falls within the desired time range and is identified by the timeindex
         field of row.
 
-        :returns: [(start time, start offset, trim_boolean),
-                   (end time, end offset, trim_boolean)]
+        :param stime: Start time as nanoseconds since Unix epoch
+        :param etime: End time as nanoseconds since Unix epoch
+        :returns: [(start time epoch, start offset, trim_boolean),
+                   (end time epoch, end offset, trim_boolean)]
         """
 
-        row_stime = UTCDateTime(NRow.starttime)
-        row_etime = UTCDateTime(NRow.endtime)
+        row_stime = timestr2nstime(NRow.starttime)
+        row_etime = timestr2nstime(NRow.endtime)
 
         # If we need a subset of the this block, trim it accordingly
         block_start = int(NRow.byteoffset)
@@ -177,12 +203,12 @@ class MiniseedDataExtractor(object):
         if stime > row_stime or etime < row_etime:
             tix = [x.split("=>") for x in NRow.timeindex.split(",")]
             if tix[-1][0] == 'latest':
-                tix[-1] = [str(row_etime.timestamp), block_end]
+                tix[-1] = [str(row_etime / NSTMODULUS), block_end]
             to_x = [float(x[0]) for x in tix]
-            s_index = bisect.bisect_left(to_x, stime.timestamp) - 1
+            s_index = bisect.bisect_left(to_x, stime / NSTMODULUS) - 1
             if s_index < 0:
                 s_index = 0
-            e_index = bisect.bisect_right(to_x, etime.timestamp)
+            e_index = bisect.bisect_right(to_x, etime / NSTMODULUS)
             off_start = int(tix[s_index][1])
             if e_index >= len(tix):
                 e_index = -1
@@ -190,8 +216,8 @@ class MiniseedDataExtractor(object):
             return ([to_x[s_index], off_start, stime > row_stime],
                     [to_x[e_index], off_end, etime < row_etime],)
         else:
-            return ([row_stime.timestamp, block_start, False],
-                    [row_etime.timestamp, block_end, False])
+            return ([row_stime / NSTMODULUS, block_start, False],
+                    [row_etime / NSTMODULUS, block_end, False])
 
     def extract_data(self, index_rows):
         """
@@ -217,27 +243,8 @@ class MiniseedDataExtractor(object):
                 logger.debug("EXTRACT: src=%s, file=%s, bytes=%s, rate:%s" %
                              (srcname, filename, NRow.bytes, NRow.samplerate))
 
-                starttime = UTCDateTime(NRow.requeststart)
-                endtime = UTCDateTime(NRow.requestend)
-
-                #Fix from M Hagerty:
-                # requeststart/end is a string - creating UTCDateTime using a string is
-                #     susceptible to round-off issues, e.g., seconds = 10.65  gets stored as 10.6499999
-                #     in etime.timestamp and then compared to the row start/end epochs
-                # This is a hack to fix this, under the assumption that the final fractional
-                #  second (e.g., 1 microsecond) should be 0 and not significant
-
-                secs = int(starttime.timestamp)
-                microsecs = int((starttime.timestamp - secs) * 1e6)
-                if microsecs % 10:
-                    microsecs += 1
-                starttime = UTCDateTime(secs + float(microsecs)/1e6)
-
-                secs = int(endtime.timestamp)
-                microsecs = int((endtime.timestamp - secs) * 1e6)
-                if microsecs % 10:
-                    microsecs += 1
-                endtime = UTCDateTime(secs + float(microsecs)/1e6)
+                starttime = timestr2nstime(NRow.requeststart)
+                endtime = timestr2nstime(NRow.requestend)
 
                 triminfo = self.handle_trimming(starttime, endtime, NRow)
                 total_bytes += triminfo[1][1] - triminfo[0][1]
@@ -286,7 +293,7 @@ class MiniseedDataExtractor(object):
                                           NRow.endtime, NRow.srcname)
 
                     # Check for passing end offset
-                    if (offset + msri.msr.contents.reclen) >= NRow.triminfo[1][1]:
+                    if (offset + msri.msr.reclen) >= NRow.triminfo[1][1]:
                         break
 
             # Otherwise, return the entire section

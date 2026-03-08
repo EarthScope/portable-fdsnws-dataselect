@@ -18,7 +18,7 @@ to serve data from a repository.
 
 ## Installing the server
 
-Requirements: Python 2.7 or higher, [ObsPy](http://obspy.org) and some common modules.
+Requirements: Python 3.9 or higher, [pymseed](https://github.com/EarthScope/pymseed) and some common modules.
 
 The instructions below identify key programs as `/path/to/python/bin/<program>`, which should
 be adjusted to wherever your preferred python setup is located.
@@ -48,7 +48,8 @@ server we recommend installing
 
     ```
     miniconda3/bin/conda config --add channels conda-forge
-    miniconda3/bin/conda install -y pip obspy
+    miniconda3/bin/conda install -y pip
+    miniconda3/bin/pip install pymseed
     ```
 
 ### Install the server from [PyPI](https://pypi.python.org/pypi) using `pip`

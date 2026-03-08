@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "portable-fdsnws-dataselect"
+dynamic = ["version"]
+description = "A portable fdsnws-dataselect/1 server"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [
+    { name = "EarthScope Data Services", email = "chad.trabant@earthscope.org" },
+]
+keywords = ["FDSN", "webservice", "EarthScope", "miniSEED"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+requires-python = ">=3.9"
+dependencies = ["pymseed>=0.4.0"]
+
+[project.urls]
+Homepage = "https://earthscope.github.io/portable-fdsnws-dataselect/"
+
+[project.scripts]
+portable-fdsnws-dataselect = "portable_fdsnws_dataselect.server:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "portable_fdsnws_dataselect.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["portable_fdsnws_dataselect*"]
+
+[tool.setuptools.package-data]
+portable_fdsnws_dataselect = [
+    "docs/index.html",
+    "docs/help.html",
+    "docs/style.css",
+    "docs/application.wadl",
+    "example/server.ini",
+]

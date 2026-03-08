@@ -16,8 +16,7 @@ from logging import getLogger, DEBUG
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, urlencode
 from collections import namedtuple
-from obspy.core.utcdatetime import UTCDateTime
-from obspy.core.stream import Stream
+from pymseed import NSTMODULUS, nstime2timestr
 from portable_fdsnws_dataselect import pkg_path, version
 from portable_fdsnws_dataselect.request import DataselectRequest, QueryError, NonQueryURLError
 from portable_fdsnws_dataselect.miniseed import NoDataError, RequestLimitExceededError
@@ -205,7 +204,7 @@ Service: fdsnws-dataselect  version %d.%d.%d
             # Otherwise, authentication is valid and we can fall through to the normal request handling
 
         request_time = time.time()
-        request_time_str = UTCDateTime(int(request_time)).isoformat() + "Z"
+        request_time_str = nstime2timestr(int(request_time) * NSTMODULUS)
 
         if logger.isEnabledFor(DEBUG):
             for key in request.bulk_params.keys():
