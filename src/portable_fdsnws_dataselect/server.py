@@ -299,10 +299,16 @@ def main() -> None:
     config = ConfigParser()
     config.read(args.configfile)
 
+    config_dir = os.path.dirname(os.path.abspath(args.configfile))
+
+    def _resolve_path(p: str) -> str:
+        """Resolve *p* relative to the config file's directory if not absolute."""
+        return p if os.path.isabs(p) else os.path.join(config_dir, p)
+
     # -- logging ---------------------------------------------------------------
 
     if config.has_option("logging", "path"):
-        log_path = config.get("logging", "path")
+        log_path = _resolve_path(config.get("logging", "path"))
         level_names = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         level_name = config.get("logging", "level", fallback="INFO").upper()
         if level_name not in level_names:
@@ -339,7 +345,7 @@ def main() -> None:
     params: dict = {}
 
     if config.has_option("index_db", "path"):
-        params["dbfile"] = config.get("index_db", "path")
+        params["dbfile"] = _resolve_path(config.get("index_db", "path"))
     else:
         _config_exit("Required database file (index_db:path) is not specified")
 
@@ -369,7 +375,8 @@ def main() -> None:
         _config_exit("Username and password must be specified together, exiting")
 
     params["maxsectiondays"] = _get_int(config, "server", "maxsectiondays", 10, min_val=1, max_exclusive=True)
-    params["docroot"] = config.get("server", "docroot", fallback="")
+    raw_docroot = config.get("server", "docroot", fallback="")
+    params["docroot"] = _resolve_path(raw_docroot) if raw_docroot else ""
 
     if config.has_option("server", "show_directories"):
         try:
@@ -380,7 +387,7 @@ def main() -> None:
         params["show_directories"] = False
 
     if config.has_option("logging", "shiplogdir"):
-        params["shiplogdir"] = config.get("logging", "shiplogdir")
+        params["shiplogdir"] = _resolve_path(config.get("logging", "shiplogdir"))
         if not os.path.isdir(params["shiplogdir"]):
             _config_exit(
                 f"Cannot find shipment logging directory at '{params['shiplogdir']}', exiting!"
