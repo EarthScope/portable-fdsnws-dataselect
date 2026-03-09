@@ -242,14 +242,14 @@ class HTTPServer_RequestHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             header = (
                 f"#{'Net':<7s}{'Sta':<8s}{'Loc':<8s}{'Chan':<8s}"
-                f"{'Earliest':<28s}{'Latest':<28s}{'Updated':<20s}\n"
+                f"{'Earliest':<32s}{'Latest':<32s}{'Updated':<32s}\n"
             )
             self.wfile.write(header.encode())
             for row in summary_rows:
                 loc = row.location if row.location != "" else "--"
                 line = (
                     f"{row.network:<8s}{row.station:<8s}{loc:<8s}{row.channel:<8s}"
-                    f"{row.earliest:<28s}{row.latest:<28s}{row.updated:<20s}\n"
+                    f"{row.earliest:<32s}{row.latest:<32s}{row.updated:<32s}\n"
                 )
                 self.wfile.write(line.encode())
             return
