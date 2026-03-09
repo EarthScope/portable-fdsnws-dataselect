@@ -44,6 +44,12 @@ version = { attr = "portable_fdsnws_dataselect.__version__" }
 where = ["src"]
 include = ["portable_fdsnws_dataselect*"]
 
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.setuptools.package-data]
 portable_fdsnws_dataselect = [
     "docs/index.html",

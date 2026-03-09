@@ -1,57 +1,45 @@
-# -*- coding: utf-8 -*-
 """
 Convenience class for iterating over miniSEED records in a file.
 """
 
 import os
+from types import TracebackType
+from typing import Optional
 
 from pymseed import MS3Record
 from pymseed.msrecord_reader import MS3RecordReader
 
 
-class MSR_iterator(object):
+class MSR_iterator:
     """
-    Class for iterating through miniSEED records in a file.
+    Iterate through miniSEED records in a file starting at an optional byte offset.
 
-    :ivar msr: Current MS3Record
-    :ivar file: filename
+    Supports use as a context manager for deterministic resource cleanup:
 
-    :param filename: File to read
-    :param startoffset: Offset in bytes to start reading the file
-    :param dataflag: Controls whether data samples are unpacked, defaults
-        to False.
-    :param skipnotdata: If true any data chunks that do not have valid data
-        record indicators will be skipped. Defaults to True (1).
-    :param verbose: Controls verbosity from 0 to 2. Defaults to 0.
+        with MSR_iterator(filename="data.mseed") as msri:
+            for rec in msri:
+                print(rec.msr.reclen)
 
-    .. rubric:: Example
-
-    from msriterator import MSR_iterator
-
-    mseedfile = "test.mseed"
-
-    for msri in MSR_iterator(filename=mseedfile, dataflag=False):
-
-        print ("{:d}: {}, reclen: {}, samples: {}, starttime: {}, endtime: {}".
-               format(msri.get_offset(),
-                      msri.get_srcname(),
-                      msri.msr.reclen,
-                      msri.msr.samplecnt,
-                      msri.get_starttime(),
-                      msri.get_endtime()))
+    Attributes:
+        msr: The current MS3Record (valid only between iterations).
+        file: Path to the source file.
     """
 
-    def __init__(self, filename, startoffset=0,
-                 reclen=-1, dataflag=0, skipnotdata=1, verbose=0,
-                 raise_errors=True):
-
+    def __init__(
+        self,
+        filename: str,
+        startoffset: int = 0,
+        dataflag: bool = False,
+        skipnotdata: bool = True,
+        verbose: int = 0,
+    ) -> None:
         self.file = filename
         self._offset = startoffset
         self._next_offset = startoffset
-        self.msr = None
+        self.msr: Optional[MS3Record] = None
 
         flags = os.O_RDONLY
-        if hasattr(os, 'O_BINARY'):
+        if hasattr(os, "O_BINARY"):
             flags |= os.O_BINARY
         self._fd = os.open(filename, flags)
         if startoffset != 0:
@@ -59,84 +47,75 @@ class MSR_iterator(object):
 
         self._reader = MS3RecordReader(
             self._fd,
-            unpack_data=bool(dataflag),
-            skip_not_data=bool(skipnotdata),
+            unpack_data=dataflag,
+            skip_not_data=skipnotdata,
             verbose=verbose,
         )
 
-    def __iter__(self):
+    # -- context manager -------------------------------------------------------
+
+    def __enter__(self) -> "MSR_iterator":
         return self
 
-    def __next__(self):
-        """
-        Read next record from file.
-        """
-        self._offset = self._next_offset
-        record = self._reader.read()
-        if record is None:
-            raise StopIteration()
-        self.msr = record
-        self._next_offset = self._offset + record.reclen
-        return self
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        self.close()
 
-    def __del__(self):
-        """
-        Close reader and file descriptor.
-        """
+    def close(self) -> None:
+        """Close the reader and the underlying file descriptor."""
         try:
-            if hasattr(self, '_reader') and self._reader is not None:
+            if getattr(self, "_reader", None) is not None:
                 self._reader.close()
                 self._reader = None
         except Exception:
             pass
         try:
-            if hasattr(self, '_fd') and self._fd >= 0:
-                os.close(self._fd)
+            fd = getattr(self, "_fd", -1)
+            if fd >= 0:
+                os.close(fd)
                 self._fd = -1
         except Exception:
             pass
 
-    def get_srcname(self, quality=False):
-        """
-        Return record source identifier
-        """
-        return self.msr.sourceid or ""
+    def __del__(self) -> None:
+        self.close()
 
-    def get_starttime(self):
-        """
-        Return record start time as nanoseconds since Unix epoch
-        """
+    # -- iterator protocol -----------------------------------------------------
+
+    def __iter__(self) -> "MSR_iterator":
+        return self
+
+    def __next__(self) -> "MSR_iterator":
+        """Read the next record from the file."""
+        self._offset = self._next_offset
+        record = self._reader.read()
+        if record is None:
+            raise StopIteration
+        self.msr = record
+        self._next_offset = self._offset + record.reclen
+        return self
+
+    # -- accessors -------------------------------------------------------------
+
+    def get_starttime(self) -> int:
+        """Return the record start time as nanoseconds since Unix epoch."""
         return self.msr.starttime
 
-    def get_endtime(self):
-        """
-        Return record end time as nanoseconds since Unix epoch
-        """
+    def get_endtime(self) -> int:
+        """Return the record end time as nanoseconds since Unix epoch."""
         return self.msr.endtime
 
-    def get_startepoch(self):
-        """
-        Return record start time as epoch seconds (float)
-        """
-        return self.msr.starttime_seconds
+    def get_offset(self) -> int:
+        """Return the byte offset of the current record within the file."""
+        return self._offset
 
-    def get_endepoch(self):
-        """
-        Return record end time as epoch seconds (float)
-        """
-        return self.msr.endtime_seconds
-
-    def set_offset(self, value):
-        """
-        Set file reading position
-        """
+    def set_offset(self, value: int) -> None:
+        """Set the current byte offset (updates both current and next)."""
         self._offset = value
         self._next_offset = value
-
-    def get_offset(self):
-        """
-        Return offset into file for current record
-        """
-        return self._offset
 
     offset = property(get_offset, set_offset)

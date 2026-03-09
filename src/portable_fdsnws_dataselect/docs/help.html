@@ -18,7 +18,15 @@
 
     <h1>Portable FDSNWS Dataselect Help</h1>
 
-    <p><a href="index.html">Display Service Interface</a></p>
+    <p>Version: <span id="service-version"><em>loading&#8230;</em></span></p>
+    <script>
+      fetch('/fdsnws/dataselect/1/version')
+        .then(r => r.text())
+        .then(t => { document.getElementById('service-version').textContent = t.trim(); })
+        .catch(() => { document.getElementById('service-version').textContent = 'unavailable'; });
+    </script>
+
+    <p><a href="index.html">Go to service main page</a></p>
 
     <h2>Description</h2>
 
@@ -28,11 +36,11 @@
 
     <p>This service is an implementation of the <a href="http://www.fdsn.org/webservices/">FDSN web service specification</a> version 1.</p>
 
-    <p>To retrieve raw waveform data in miniSEED format, submit a request by either of two methods:
+    <p>To retrieve raw waveform data in miniSEED format, submit a request by either of two methods:</p>
       <ul>
-	<li><em>via HTTP GET</em> : Provide a series of parameter-value pairs in the URL that specify the start-time and end-time, along with the desired network(s), station(s), location(s) and  channel(s) . Wildcards are supported.  Please visit the fdsnws-dataselect service interface for parameter usage details.</li>
+	<li><em>via HTTP GET</em> : Provide a series of parameter-value pairs in the URL that specify the start-time and end-time, along with the desired network(s), station(s), location(s) and channel(s). Wildcards are supported.  Please visit the fdsnws-dataselect service interface for parameter usage details.</li>
 	<li><em>via HTTP POST</em>: Submit a pre-formatted request (e.g. a file) to the service containing a list of the desired networks, stations, locations, channels, start-times and end-times.  The POSTing method is described in more detail on this page.</li>
-    </ul></p>
+    </ul>
 
     <p>This service is designed to handle very large data requests<sup class="footnote" id="fnrevd72c989c9e10401bb1ce9bf0037707c9"><a href="#fnd72c989c9e10401bb1ce9bf0037707c9">1</a></sup> and can easily be used with command line programs such as wget, curl or similar utilities.</p>
 
@@ -43,7 +51,6 @@
 
 	  <p>Optional parameters that may be specified:
 	    <ul>
-        <li>'quality': SEED quality/version, selection of a specific SEED data quality code (defaults to &#8220;best&#8221;)</li>
         <li>'nodata': HTTP response status when no data is available, can be &#8220;204&#8221; or &#8220;404&#8221; (defaults to &#8220;204&#8221;)</li>
         <li>'format': Data format for response, only &#8220;miniseed&#8221; is allowed.</li>
         <!-- These options are not yet supported
@@ -69,7 +76,6 @@ II KURK 00 BHN 2010-03-25T00:00:00 2010-04-01T00:00:00</pre>
     <p>Requests can be made with a selection file and the <code>wget</code> Unix command line utility.</p>
 
 <pre>$ cat waveform.request
-quality=B
 TA A25A -- BHZ 2010-03-25T00:00:00 2010-04-01T00:00:00
 TA A25A -- BHE 2010-03-25T00:00:00 2010-04-01T00:00:00</pre>
 
@@ -84,7 +90,6 @@ TA A25A -- BHE 2010-03-25T00:00:00 2010-04-01T00:00:00</pre>
     <p>Requests can also be made with a selection file and the <code>curl</code> Unix command line utility.</p>
 
 <pre>$ cat waveform.request
-quality=B
 TA A25A -- BHZ 2010-03-25T00:00:00 2010-04-01T00:00:00
 TA A25A -- BHE 2010-03-25T00:00:00 2010-04-01T00:00:00</pre>
 
@@ -98,26 +103,25 @@ TA A25A -- BHE 2010-03-25T00:00:00 2010-04-01T00:00:00</pre>
 
     <p>This will send the request to the server and save the results in a file name TA.miniseed</p>
 
-    <p>We recommend always using the <code>-L</code> option to allow curl to follow HTTP redirections specified by our systems.  The DMC uses HTTP redirection during maintenance to keep servicing requests.</p>
-
     <p>You may wish to use the <code>-f</code> option. This will cause curl to return an exit code of 22 if data is not found or the request is improperly formatted.</p>
 
-    <p>See http://curl.haxx.se/docs/manpage.html for more information.</p>
+    <p>See <a href="https://curl.se/docs/manpage.html">https://curl.se/docs/manpage.html</a> for more information.</p>
 
     <h2>Working with miniSEED</h2>
 
-    <p>A variety of software tools are available from the DMC to assist with organizing and viewing miniSEED data or converting it to another format.  Detailed descriptions and usage examples for each piece of software can be found by clicking the links below.  </p>
+    <p>A variety of open source software tools are available to assist with organizing and viewing miniSEED data or converting it to another format.</p>
 
     <p><a href="https://github.com/earthscope/mseed2sac">mseed2sac</a> &#8211; for converting miniSEED to <span class="caps">SAC</span> format<br />
       <a href="https://github.com/earthscope/mseed2ascii">mseed2ascii</a> &#8211; for converting miniSEED to <span class="caps">ASCII</span> formats<br />
       <a href="https://github.com/earthscope/dataselect">dataselect</a> &#8211; for selecting and sorting miniSEED<br />
       <a href="https://github.com/earthscope/msi">miniSEED Inspector</a> &#8211; for quickly parsing and summarizing miniSEED data<br />
+    </p>
 
     <h2 id="restricteddata">Accessing restricted data</h2>
 
     Restricted access is not implemented in this server.
     <!--
-    <p>Requesting restricted data via this web service requires authentication.  The authentication is done using a standard <span class="caps">HTTP</span> mechanism called <a href="https://en.wikipedia.org/wiki/Digest_access_authentication">digest access authentication</a>, using a 2-way handshake.  To submit a request with authentication credentials you would use the <code>queryauth</code> method of the service in place of the <code>query</code> method.  You must use a client that supports digest authentication, luckily such support is common.  
+    <p>Requesting restricted data via this web service requires authentication.  The authentication is done using a standard <span class="caps">HTTP</span> mechanism called <a href="https://en.wikipedia.org/wiki/Digest_access_authentication">digest access authentication</a>, using a 2-way handshake.  To submit a request with authentication credentials you would use the <code>queryauth</code> method of the service in place of the <code>query</code> method.  You must use a client that supports digest authentication, luckily such support is common.
    </p>
 
     <p>For example, submitting a request and subsequently initiating the authentication handshake would be done by requesting this <span class="caps">URL</span>:</p>
@@ -133,9 +137,9 @@ TA A25A -- BHE 2010-03-25T00:00:00 2010-04-01T00:00:00</pre>
 
     <h2 id="considerations">Considerations</h2>
 
-    <p class="footnote" id="fnd72c989c9e10401bb1ce9bf0037707c9"><sup>1</sup> In general, it is preferable to not ask for too much data in a single request. Large requests take longer to complete. If a large request fails due to any networking issue, it will have to be resubmitted to be completed. This will cause the entire request to be completely reprocessed and re-transmitted. By breaking large requests into smaller requests, only the smaller pieces will need to be resubmitted and re-transmitted if there is a networking problem. Web service network connections will commonly time out and break after some number of minutes if no data is transmitted.
+    <p class="footnote" id="fnd72c989c9e10401bb1ce9bf0037707c9"><sup>1</sup> In general, it is preferable to not ask for too much data in a single request. Large requests take longer to complete. If a large request fails due to any networking issue, it will have to be resubmitted to be completed. This will cause the entire request to be completely reprocessed and re-transmitted. By breaking large requests into smaller requests, only the smaller pieces will need to be resubmitted and re-transmitted if there is a networking problem. Web service network connections will commonly time out and break after some number of minutes if no data is transmitted.</p>
 
-    <p>Conversly, it is less efficient to ask for too little data in each request. Each time a request is made, a network connection must be established and a request processing unit started. For performance reasons, it is better to group together selections from the same stations and place them in the same request. This is especially true of selections that cover the same time periods.</p>
+    <p>Conversely, it is less efficient to ask for too little data in each request. Each time a request is made, a network connection must be established and a request processing unit started. For performance reasons, it is better to group together selections from the same stations and place them in the same request. This is especially true of selections that cover the same time periods.</p>
 
   </body>
 </html>

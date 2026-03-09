@@ -1,146 +1,135 @@
-# -*- coding: utf-8 -*-
 """
-HTTP request handler
+FDSN dataselect request parsing and validation.
 """
+
+import datetime
+import itertools
+import re
+from logging import getLogger
 from urllib.parse import parse_qs, urlparse
 
-import os.path
-import datetime
-import re
-
-from logging import getLogger
-from portable_fdsnws_dataselect import version, pkg_path
+from portable_fdsnws_dataselect import version
 
 logger = getLogger(__name__)
 
-#: Parameters that correspond to time/channel constraints (appear in rows in a POST request)
-ROW_PARAM_KEYS = ('starttime', 'endtime', 'network', 'station', 'location', 'channel',)
+#: Parameters that apply to the entire query (key=value pairs in a POST body)
+BULK_PARAM_KEYS = ("quality", "minimumlength", "longestonly", "format", "nodata")
 
-#: Parameters that apply to the entire query (appear as key/value pairs in a POST request)
-BULK_PARAM_KEYS = ('quality', 'minimumlength', 'longestonly', 'format', 'nodata',)
-
-#: Alternate parameter names
-PARAM_SUBSTITUTIONS = {
-    'start': 'starttime',
-    'end': 'endtime',
-    'loc': 'location',
-    'net': 'network',
-    'sta': 'station',
-    'cha': 'channel',
+#: Short-form parameter aliases
+PARAM_SUBSTITUTIONS: dict[str, str] = {
+    "start": "starttime",
+    "end": "endtime",
+    "loc": "location",
+    "net": "network",
+    "sta": "station",
+    "cha": "channel",
 }
 
 #: Default parameter values
-DEFAULT_PARAMS = {
-    'starttime': '1900-01-01T00:00:00.000000',
-    'endtime': '2100-01-01T00:00:00.000000',
-    'format': 'miniseed',
-    'nodata': '204',
-    'network': '*',
-    'station': '*',
-    'location': '*',
-    'channel': '*',
-    'quality': 'B',
-    'minimumlength': '0.0',
-    'longestonly': 'FALSE',
+DEFAULT_PARAMS: dict[str, str] = {
+    "starttime": "1900-01-01T00:00:00.000000",
+    "endtime": "2100-01-01T00:00:00.000000",
+    "format": "miniseed",
+    "nodata": "204",
+    "network": "*",
+    "station": "*",
+    "location": "*",
+    "channel": "*",
+    "quality": "B",
+    "minimumlength": "0.0",
+    "longestonly": "FALSE",
 }
 
-#: Parameters required for any query
-REQUIRED_PARAMS = ('starttime', 'endtime',)
+#: Parameters required for any data query
+REQUIRED_PARAMS = ("starttime", "endtime")
 
-#: Valid endpoints
-QUERY_ENDPOINTS = ('query', 'queryauth', 'summary', 'version', 'application.wadl',)
+#: Valid endpoint names
+QUERY_ENDPOINTS = ("query", "queryauth", "summary", "version", "application.wadl")
 
-
-def parse_datetime(timestring):
-    '''
-    Try to parse the given time string according to our supported date formats
-    '''
-    try:
-        return datetime.datetime.strptime(timestring, "%Y-%m-%dT%H:%M:%S.%f")
-    except Exception:
-        pass
-    try:
-        return datetime.datetime.strptime(timestring, "%Y-%m-%dT%H:%M:%S")
-    except Exception:
-        pass
-    try:
-        return datetime.datetime.strptime(timestring, "%Y-%m-%d")
-    except Exception:
-        pass
-    raise QueryError("Datetime '%s' not formatted as one of YYYY-MM-DDTHH:MM:SS.ssssss, YYYY-MM-DDTHH:MM:SS or YYYY-MM-DD" % timestring)
+# Pre-compiled patterns for selection line validation
+_ID_RE = re.compile(r"^[-0-9a-zA-Z,?*]+$")
+_TIME_RE = re.compile(r"^[-:T.*\d]+$")
 
 
-def normalize_datetime(timestring):
-    '''Normalize time string to strict YYYY-MM-DDThh:mm:ss.ffffff format
-    '''
+def parse_datetime(timestring: str) -> datetime.datetime:
+    """
+    Parse *timestring* using the supported FDSN date-time formats.
+
+    :raises QueryError: When none of the supported formats match.
+    """
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.datetime.strptime(timestring, fmt)
+        except ValueError:
+            pass
+    raise QueryError(
+        f"Datetime '{timestring}' not formatted as one of "
+        "YYYY-MM-DDTHH:MM:SS.ssssss, YYYY-MM-DDTHH:MM:SS or YYYY-MM-DD"
+    )
+
+
+def normalize_datetime(timestring: str) -> str:
+    """Normalize *timestring* to ``YYYY-MM-DDThh:mm:ss.ffffff`` format."""
     return parse_datetime(timestring).strftime("%Y-%m-%dT%H:%M:%S.%f")
 
 
 class QueryError(Exception):
-    """
-    Error indicating bad data from the user
-    """
-    pass
+    """Raised for invalid or unsupported request parameters."""
 
 
 class NonQueryURLError(Exception):
-    """
-    Error indicating that the user requested something other than a regular query
-    """
-    pass
+    """Raised when the URL path does not correspond to a data query endpoint."""
 
 
-class DataselectRequest(object):
-    """
-    Parse, validate, and expose a dataselect request.
-    """
+class DataselectRequest:
+    """Parse, validate, and expose a dataselect request."""
 
-    #: Endpoint (eg. "query")
-    endpoint = None
-    #: Path relative to the service prefix (eg. "/fdsnws/dataselect/1/query")
-    path = None
-    #: Time/channel constraints in the form of POST-style lines
-    query_rows = None
-    #: Non-row parameters (eg. format, minimumlength)
-    bulk_params = None
+    #: Endpoint name (e.g. ``"query"``)
+    endpoint: str
+    #: Service-relative path (e.g. ``"/fdsnws/dataselect/1/query"``)
+    path: str
+    #: Time/channel selection rows ``[[net, sta, loc, cha, start, end], ...]``
+    query_rows: list[list[str]]
+    #: Non-row parameters such as ``format``, ``nodata``, ``quality``
+    bulk_params: dict[str, str]
 
-    def __init__(self, path, body=None):
+    def __init__(self, path: str, body: str | None = None) -> None:
         """
-        Parse the given path (which may include query parameters) and (optional) POST body
-        into a request.
+        Parse *path* (with optional query string) and optional POST *body*.
+
+        :raises QueryError: For invalid parameters.
+        :raises NonQueryURLError: When *path* is not a recognised endpoint.
         """
         req = urlparse(path)
         self.path = req.path.lower()
         self.endpoint = self.get_path_endpoint(self.path)
-        logger.debug("Request endpoint: %s" % self.endpoint)
-        # Only parse the body or query arguments for endpoints that need them
-        if self.endpoint in ('query', 'queryauth', 'summary', ):
+        logger.debug(f"Request endpoint: {self.endpoint}")
+        if self.endpoint in ("query", "queryauth", "summary"):
             if not body:
                 body = self.parse_query(req.query)
-                logger.debug("GET request translated to request body:\n%s" % body)
+                logger.debug(f"GET request translated to request body:\n{body}")
             self.parse_request(body)
 
-    def get_path_endpoint(self, path):
+    def get_path_endpoint(self, path: str) -> str:
         """
-        Verify that the given path points to a valid endpoint, and return the endpoint.
+        Return the endpoint name for *path* or raise :exc:`NonQueryURLError`.
 
         >>> DataselectRequest.get_path_endpoint(None, '/fdsnws/dataselect/1/query')
         'query'
-
         """
-        # Check that it begins with /fdsnws/dataselect/1/
-        prefix = '/fdsnws/dataselect/%d/' % version[0]
+        prefix = f"/fdsnws/dataselect/{version[0]}/"
         if not path.startswith(prefix):
             raise NonQueryURLError(path)
-        # Check for valid suffix to path & respond if not a data request
-        path_tail = path[len(prefix):]
-        if path_tail not in QUERY_ENDPOINTS:
+        tail = path[len(prefix):]
+        if tail not in QUERY_ENDPOINTS:
             raise NonQueryURLError(path)
-        return path_tail
+        return tail
 
-    def parse_query(self, query):
+    def parse_query(self, query: str) -> str:
         """
-        Parse a GET query string and convert it into a POST-style text block.
+        Convert a GET query string into a POST-style text body.
+
+        :raises QueryError: For unrecognised or duplicated parameters.
         """
         qry = parse_qs(query)
         sql_qry = dict(DEFAULT_PARAMS)
@@ -148,128 +137,99 @@ class DataselectRequest(object):
         for k, v in qry.items():
             k = PARAM_SUBSTITUTIONS.get(k, k)
             if k not in sql_qry:
-                raise QueryError("Unrecognized query parameter: '%s'" % k)
-            elif len(v) > 1:
-                raise QueryError("Multiple '%s' parameters not allowed." % k)
-            else:
-                if k in required:
-                    required.remove(k)
-                sql_qry[k] = v[0]
+                raise QueryError(f"Unrecognized query parameter: '{k}'")
+            if len(v) > 1:
+                raise QueryError(f"Multiple '{k}' parameters not allowed.")
+            if k in required:
+                required.remove(k)
+            sql_qry[k] = v[0]
 
-        if len(required) > 0 and self.endpoint != 'summary':
-            raise QueryError("Missing parameter%s: %s" % ("" if len(required) == 1 else "s", ", ".join(required)))
+        if required and self.endpoint != "summary":
+            plural = "" if len(required) == 1 else "s"
+            raise QueryError(f"Missing parameter{plural}: {', '.join(required)}")
 
-        # Build a string for the matching request as a POST body
-        bulk = []
-        for k in BULK_PARAM_KEYS:
-            bulk.append("%s=%s" % (k, sql_qry[k]))
-        bulk.append(" ".join((sql_qry['network'],
-                              sql_qry['station'],
-                              sql_qry['location'],
-                              sql_qry['channel'],
-                              sql_qry['starttime'],
-                              sql_qry['endtime'])))
-
+        bulk = [f"{k}={sql_qry[k]}" for k in BULK_PARAM_KEYS]
+        bulk.append(
+            " ".join(
+                (
+                    sql_qry["network"],
+                    sql_qry["station"],
+                    sql_qry["location"],
+                    sql_qry["channel"],
+                    sql_qry["starttime"],
+                    sql_qry["endtime"],
+                )
+            )
+        )
         return "\n".join(bulk)
 
-    def parse_request(self, request_text):
-        '''
-        Read a specified request file and return it as a list of tuples.
+    def parse_request(self, request_text: str) -> None:
+        """
+        Parse a POST-style request body into :attr:`bulk_params` and :attr:`query_rows`.
 
-        Format of initial lines should be key/value pairs, like:
-          quality=<quality>
-          minimumlength=<float>
-          longestonly=<TRUE|FALSE>
-        These key-value pairs (with default values if appropriate) will go into `self.bulk_params`
+        The body format is::
 
-        Expected format for the remaining lines is:
-          Network Station Location Channel StartTime EndTime
+            quality=B
+            NET STA LOC CHA StartTime EndTime
+            ...
 
-        where the fields are space delimited, can be comma-separated lists,
-        and Network, Station, Location and Channel may contain '*' and '?' wildcards
-        and StartTime and EndTime are in YYYY-MM-DDThh:mm:ss.ssssss format or are '*'
-
-        Empty locations must be indictaed with --
-
-        Each line will be split into a list and added to `self.query_rows`
-        '''
+        :raises QueryError: For malformed or unsupported content.
+        """
         self.query_rows = []
-        self.bulk_params = dict(((k, DEFAULT_PARAMS[k]) for k in BULK_PARAM_KEYS))
-        idmatch = re.compile('^[-0-9a-zA-Z,?*]+$')
-        timematch = re.compile('^[-:T.*\d]+$')
+        self.bulk_params = {k: DEFAULT_PARAMS[k] for k in BULK_PARAM_KEYS}
         inprefix = True
 
-        # Parse the request lines
-        for line in request_text.split('\n'):
+        for line in request_text.split("\n"):
             line = line.strip()
-
-            # Skip blank or commented-out lines
             if not line or line.startswith("#"):
                 continue
 
-            # Might be a bulk parameter; if not, assume no others are present
             if inprefix:
                 keyval = line.split("=")
-                if len(keyval) == 2:
-                    lkey = keyval[0].lower()
-                    if lkey in self.bulk_params:
-                        self.bulk_params[lkey] = keyval[1]
-                        continue
+                if len(keyval) == 2 and keyval[0].lower() in self.bulk_params:
+                    self.bulk_params[keyval[0].lower()] = keyval[1]
+                    continue
                 inprefix = False
 
-            # Process "Net Sta Loc Chan Start End" line
             fields = line.split()
-
             if len(fields) != 6:
-                raise QueryError("Unrecognized selection line: '{0:s}'".format(line))
+                raise QueryError(f"Unrecognized selection line: '{line}'")
 
-            # Validate data identifier fields
             for idf in fields[:4]:
-                if not idmatch.match(idf):
-                    raise QueryError("Unrecognized selection identifier: '{0:s}'".format(line))
+                if not _ID_RE.match(idf):
+                    raise QueryError(f"Unrecognized selection identifier: '{line}'")
 
-            # Validate time fields
             for tidx in (4, 5):
-                if not timematch.match(fields[tidx]):
-                    raise QueryError("Unrecognized selection time: '{0:s}'".format(line))
-                # Normalize time fields to a strict time format if not wildcards
-                if fields[tidx] != '*':
+                if not _TIME_RE.match(fields[tidx]):
+                    raise QueryError(f"Unrecognized selection time: '{line}'")
+                if fields[tidx] != "*":
                     try:
                         fields[tidx] = normalize_datetime(fields[tidx])
                     except Exception:
-                        raise QueryError("Cannot normalize time: {0:s}".format(fields[tidx]))
+                        raise QueryError(f"Cannot normalize time: {fields[tidx]}")
 
-            # Expand identifier lists and add selections to list
-            for net in fields[0].split(","):
-                for sta in fields[1].split(","):
-                    for loc in fields[2].split(","):
-                        for cha in fields[3].split(","):
-                            self.query_rows.append([net, sta, loc, cha,
-                                                    fields[4], fields[5]])
+            for net, sta, loc, cha in itertools.product(
+                fields[0].split(","),
+                fields[1].split(","),
+                fields[2].split(","),
+                fields[3].split(","),
+            ):
+                self.query_rows.append([net, sta, loc, cha, fields[4], fields[5]])
 
-        # Validate bulk parameters
-        if self.bulk_params['format'] not in ('miniseed'):
-            raise QueryError("Unsupported format: '%s'" % self.bulk_params['format'])
+        if self.bulk_params["format"] not in ("miniseed",):
+            raise QueryError(f"Unsupported format: '{self.bulk_params['format']}'")
 
-        if self.bulk_params['nodata'] not in ('204', '404'):
+        if self.bulk_params["nodata"] not in ("204", "404"):
             raise QueryError("nodata must be one of 204 or 404")
 
-        if self.bulk_params['quality'] not in ('D', 'R', 'Q', 'M', 'B'):
+        if self.bulk_params["quality"] not in ("D", "R", "Q", "M", "B"):
             raise QueryError("quality must be one of B, D, R, M or Q")
 
-        if self.bulk_params['minimumlength'] != DEFAULT_PARAMS['minimumlength']:
+        if self.bulk_params["minimumlength"] != DEFAULT_PARAMS["minimumlength"]:
             raise QueryError("minimumlength is not supported")
-        # Validation if this becomes supported
-        #try:
-        #    float(self.bulk_params['minimumlength'])
-        #except Exception:
-        #    raise QueryError("minimumlength must be a number")
 
-        if self.bulk_params['longestonly'] != DEFAULT_PARAMS['longestonly']:
+        if self.bulk_params["longestonly"] != DEFAULT_PARAMS["longestonly"]:
             raise QueryError("longestonly is not supported")
-        # Validation if this becomes supported
-        #if self.bulk_params['longestonly'].lower() not in ('true', 'false'):
-        #    raise QueryError("longestonly must be 'true' or 'false'")
 
-        if len(self.query_rows) == 0:
+        if not self.query_rows:
             raise QueryError("No data selection present")

@@ -18,13 +18,6 @@
             <param name="station" style="query"  type="xs:string"/>
             <param name="location" style="query" type="xs:string"/>
             <param name="channel" style="query" type="xs:string"/>
-            <param name="quality" style="query" type="xs:string" default="B">
-              <option value="D"/>
-              <option value="R"/>
-              <option value="Q"/>
-              <option value="M"/>
-              <option value="B"/>
-            </param>
             <param name="nodata" style="query" type="xs:string" default="204">
               <option value="204"/>
               <option value="404"/>

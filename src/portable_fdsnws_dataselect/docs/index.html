@@ -6,7 +6,7 @@
 
   <meta name="keywords" content="seismology, seismological data,
   earthquakes, EarthScope" />
-  <meta name="description" content="EarthScope Consortium is a university consortium dedicated to transforming global geophysical research and education." />
+  <meta name="description" content="Portable FDSNWS Dataselect provides a local FDSN web service for accessing miniSEED time series data." />
   <!-- Forces IE to render in 'latest' compatible mode -->
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -19,7 +19,15 @@
 
     <h1>Portable FDSNWS Dataselect Service Interface</h1>
 
-    <p><a href="help.html">Display Help</a></p>
+    <p>Version: <span id="service-version"><em>loading&#8230;</em></span></p>
+    <script>
+      fetch('/fdsnws/dataselect/1/version')
+        .then(r => r.text())
+        .then(t => { document.getElementById('service-version').textContent = t.trim(); })
+        .catch(() => { document.getElementById('service-version').textContent = 'unavailable'; });
+    </script>
+
+    <p><a href="help.html">Go to help page</a></p>
 
     <h2>Description</h2>
 
@@ -32,37 +40,35 @@
   <p>Below is a full list of service parameters and their usage.</p>
 
   <h2>Query Usage</h2>
-  <pre>/query? (date-range-options) [channel-options] [quality-options] [misc-options] [format-options] [nodata=404]</pre>
+  <pre>/query? (date-range-options) [channel-options] [misc-options] [format-options] [nodata=404]</pre>
 
 	<p>where</p>
 
-<pre>date-range-options	:: 	(start=&lt;time&gt;) (end=&lt;time&gt;)
-channel-options		:: 	[net=&lt;network&gt;] [sta=&lt;station&gt;] [loc=&lt;location&gt;] [cha=&lt;channel&gt;]
-quality-options		:: 	[quality=&lt;D|R|Q|M|B&gt;]
-misc-options		::	[nodata=&lt;204|404&gt;]
-format-options          ::      [format=&lt;miniseed&gt;]</pre>
+<pre>date-range-options ::  (start=&lt;time&gt;) (end=&lt;time&gt;)
+channel-options    :: 	[net=&lt;network&gt;] [sta=&lt;station&gt;] [loc=&lt;location&gt;] [cha=&lt;channel&gt;]
+misc-options       ::  [nodata=&lt;204|404&gt;]
+format-options     ::  [format=&lt;miniseed&gt;]</pre>
 
 	<p>(..) required<br />
 [..] optional</p>
 
-	<p>Query parameters are joined by ampersands <strong>&#8221;&amp;&#8221;</strong>, without blank space (see the sample queries).</p>
+	<p>Query parameters are joined by ampersands <strong>&#8220;&amp;&#8221;</strong>, without blank space (see the sample queries).</p>
 
 	<h2><span class="caps">POST</span> Usage</h2>
 
 	<p>Alternately, <em>instead</em> of providing parameter-value pairs in the <span class="caps">URL</span>, a file containing a selection list can be <span class="caps">POST</span>ed to this service.  For additional details, including an example selection file, visit this page&#8217;s help section.</p>
 
-<pre>quality=&lt;D|R|Q|M|B&gt;
-nodata=&lt;true|false&gt;
+<pre>nodata=&lt;204|404&gt;
 &lt;Network&gt; &lt;Station&gt; &lt;Location&gt; &lt;Channel&gt; &lt;StartTime&gt; &lt;EndTime&gt;
 ...</pre>
 
-	<p>Quality, format and nodata are optional.  Wildcards are acceptable for Network, Station, Location, and Channel.  Click <a href="#time">here</a> for time format details.</p>
+	<p>Format and nodata are optional.  Wildcards are acceptable for Network, Station, Location, and Channel.  Click <a href="#time">here</a> for time format details.</p>
 
   <p>For more details and examples on the expected POST format try the <a href="help.html">Help Page</a>.</p>
 
   <h3>Sample Query</h3>
   <ul>
-	  <li><a href="/fdsnws/dataselect/1/query?net=IU&amp;sta=ANMO&amp;loc=00&amp;cha=BHZ&amp;start=2010-02-27T06:30:00.000&amp;end=2010-02-27T10:30:00.000&nodata=404">/fdsnws/dataselect/1/query?net=IU&sta=ANMO&loc=00&cha=BHZ&start=2010-02-27T06:30:00.000&end=2010-02-27T10:30:00.000&nodata=404</a></li>
+	  <li><a href="/fdsnws/dataselect/1/query?net=IU&amp;sta=ANMO&amp;loc=00&amp;cha=BHZ&amp;start=2010-02-27T06:30:00.000&amp;end=2010-02-27T10:30:00.000&amp;nodata=404">/fdsnws/dataselect/1/query?net=IU&amp;sta=ANMO&amp;loc=00&amp;cha=BHZ&amp;start=2010-02-27T06:30:00.000&amp;end=2010-02-27T10:30:00.000&amp;nodata=404</a></li>
     <li>
       Sample query may not result in data, replace the identifiers and time range to match channel(s) in your data set.
     </li>
@@ -111,36 +117,29 @@ nodata=&lt;true|false&gt;
 			<td>net[work]</td>
 			<td> IU</td>
 			<td>Select one or more network codes. <a href="#wildcardsandlists">Accepts wildcards; accepts lists in GET usage.</a>  Can be <span class="caps">SEED</span> codes or data center defined codes. </td>
-			<th><em>any</em></th>
+			<td><em>any</em></td>
 			<td>string</td>
 		</tr>
 		<tr>
 			<td>sta[tion]</td>
 			<td><span class="caps">ANMO</span> </td>
 			<td>Select one or more <span class="caps">SEED</span> station codes. <a href="#wildcardsandlists">Accepts wildcards; accepts lists in GET usage</a></td>
-			<th><em>any</em></th>
+			<td><em>any</em></td>
 			<td>string</td>
 		</tr>
 		<tr>
 			<td>loc[ation]</td>
 			<td>00 </td>
 			<td>Select one or more <span class="caps">SEED</span> location identifier. <a href="#wildcardsandlists">Accepts wildcards; accepts lists in GET usage</a> Use <code>--</code> for &#8220;Blank&#8221; location IDs (ID&#8217;s containing 2 spaces).</td>
-			<th><em>any</em></th>
+			<td><em>any</em></td>
 			<td>string</td>
 		</tr>
 		<tr>
 			<td>cha[nnel]</td>
 			<td>BH1 </td>
 			<td>Select one or more <span class="caps">SEED</span> channel codes. <a href="#wildcardsandlists">Accepts wildcards; accepts lists in GET usage</a></td>
-			<th><em>any</em></th>
+			<td><em>any</em></td>
 			<td>string</td>
-		</tr>
-		<tr>
-			<td>quality</td>
-			<td>B</td>
-			<td>Select data based on miniSEED data quality indicator. <code>D</code>, <code>R</code>, <code>Q</code>, <code>M</code>, <code>B</code>. <code>M</code> and <code>B</code> (default) are treated the same and indicate <em>best</em> available. For this server <em>best</em> means all available data qualities.</td>
-			<td>B</td>
-			<td>quality</td>
 		</tr>
 		<tr>
 			<td>nodata</td>
@@ -174,9 +173,9 @@ nodata=&lt;true|false&gt;
   <hr/>
 
 
-    <h3><a name="time"></a>Date and Time Formats</h3>
+    <h3 id="time">Date and Time Formats</h3>
     <div>
-      	<p id="time">Year, Month, Day in Month &mdash; Time:</p>
+      	<p>Year, Month, Day in Month &mdash; Time:</p>
 
 	<p><code>YYYY-MM-DDThh:mm:ss[.ssssss]</code> ex. <small>1997-01-31T12:04:32.123</small></p>
 
@@ -196,7 +195,7 @@ ssssss	:: one to six digits representing decimal fractions of a second, down to 
 
     <hr/>
 
-    <h3><a name="wildcardsandlists"></a>Wildcards and Lists</h3>
+    <h3 id="wildcardsandlists">Wildcards and Lists</h3>
     <div>
       	<p><em>Wildcards</em><br />
 The question mark <code>?</code> represents any single character (exactly one), while the asterisk <code>*</code> represents zero or more characters.</p>

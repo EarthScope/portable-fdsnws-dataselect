@@ -1,21 +1,23 @@
+"""
+Server startup, configuration parsing, and thread pool.
+"""
 
-import threading
-import sqlite3
-import logging.config
 import argparse
-import os
-import socket
 import base64
+import logging.config
+import os
+import sqlite3
 import sys
-
-from logging import getLogger
+import threading
 from http.server import HTTPServer
-from socketserver import ThreadingMixIn
-from queue import Queue
+from logging import getLogger
 from platform import python_version
+from queue import Queue
 from configparser import ConfigParser
 from shutil import copyfile
-from portable_fdsnws_dataselect import pkg_path, version
+from socketserver import ThreadingMixIn
+
+from portable_fdsnws_dataselect import pkg_path, version, __version__
 from portable_fdsnws_dataselect.handler import HTTPServer_RequestHandler
 from portable_fdsnws_dataselect.miniseed import MiniseedDataExtractor
 
@@ -23,490 +25,403 @@ logger = getLogger(__name__)
 
 
 class ThreadPoolMixIn(ThreadingMixIn):
-    '''
-    use a thread pool instead of a new thread on every request
-    '''
-    numThreads = 10
-    allow_reuse_address = True  # seems to fix socket.error on server restart
+    """Use a fixed-size thread pool instead of a new thread per request."""
 
-    def serve_forever(self):
-        '''
-        Handle one request at a time until doomsday.
-        '''
-        # set up the threadpool
-        self.requests = Queue(self.numThreads)
+    numThreads: int = 10
+    allow_reuse_address: bool = True  # fix socket reuse on restart
+
+    def serve_forever(self) -> None:
+        self.requests: Queue = Queue(self.numThreads)
 
         for _ in range(self.numThreads):
             t = threading.Thread(target=self.process_request_thread)
-            t.setDaemon(1)
+            t.daemon = True
             t.start()
 
-        # server main loop
         while True:
             self.handle_request()
 
         self.server_close()
 
-    def process_request_thread(self):
-        '''
-        obtain request from queue instead of directly from server socket
-        '''
+    def process_request_thread(self) -> None:
         while True:
             ThreadingMixIn.process_request_thread(self, *self.requests.get())
 
-    def handle_request(self):
-        '''
-        simply collect requests and put them on the queue for the workers.
-        '''
+    def handle_request(self) -> None:
         try:
             request, client_address = self.get_request()
-        except socket.error:
+        except OSError:
             return
         if self.verify_request(request, client_address):
             self.requests.put((request, client_address))
 
 
-def run_server(params):
-    '''Run the server w/ the provided options and config
-    '''
-    logger.info('starting server...')
+def _config_exit(msg: str) -> None:
+    """Log *msg* as critical, print it, and exit with status 1."""
+    logger.critical(msg)
+    print(msg)
+    sys.exit(1)
 
-    # Note that `object` is the base class here, we need this to make super() work in Python 2
-    # See http://stackoverflow.com/a/18392639/1005790
-    class ThreadedServer(ThreadPoolMixIn, HTTPServer, object):
-        def __init__(self, address, handlerClass=HTTPServer_RequestHandler):
-            super(ThreadedServer, self).__init__(address, handlerClass)
-            self.key = ''
 
-        def set_auth(self, username, password):
+def _get_int(
+    config: ConfigParser,
+    section: str,
+    key: str,
+    default: int,
+    *,
+    min_val: int | None = None,
+    max_exclusive: bool = False,
+) -> int:
+    """Read an integer option from *config*, exiting on invalid input."""
+    if not config.has_option(section, key):
+        return default
+    raw = config.get(section, key)
+    try:
+        val = int(raw)
+    except ValueError:
+        _config_exit(f"Config {section}:{key} ({raw}) is not an integer")
+    if min_val is not None:
+        if max_exclusive and val <= min_val - 1:
+            _config_exit(f"Config {section}:{key} must be > {min_val - 1}, not {val}")
+        elif not max_exclusive and val < min_val:
+            _config_exit(f"Config {section}:{key} must be >= {min_val}, not {val}")
+    return val
+
+
+def run_server(params: dict) -> None:
+    """Start the HTTP server with *params*."""
+    logger.info("starting server...")
+
+    class ThreadedServer(ThreadPoolMixIn, HTTPServer):
+        def __init__(
+            self,
+            address: tuple,
+            handler_class: type = HTTPServer_RequestHandler,
+        ) -> None:
+            super().__init__(address, handler_class)
+            self.key: str = ""
+
+        def set_auth(self, username: str, password: str) -> None:
             self.key = base64.b64encode(
-                ('%s:%s' % (username, password)).encode('utf-8')).decode('ascii')
+                f"{username}:{password}".encode()
+            ).decode("ascii")
 
-        def get_auth_key(self):
+        def get_auth_key(self) -> str:
             return self.key
 
-    server = ThreadedServer((params['interface'], params['port']), HTTPServer_RequestHandler)
+    server = ThreadedServer((params["interface"], params["port"]), HTTPServer_RequestHandler)
     server.params = params
 
-    if 'username' in params and 'password' in params:
-        server.set_auth(params['username'], params['password'])
+    if params.get("username") and params.get("password"):
+        server.set_auth(params["username"], params["password"])
 
-    msg = ('Started dataselect server (%s) @ http://%s:%d'
-           % (".".join(str(i) for i in version),
-              server.server_name,
-              server.server_port))
+    msg = f"Started dataselect server ({__version__}) @ http://{server.server_name}:{server.server_port}"
     logger.warning(msg)
     print(msg)
 
-    msg = 'Running under Python %s' % python_version()
+    msg = f"Running under Python {python_version()}"
     logger.warning(msg)
 
-    for p in sorted(server.params.keys()):
-        logger.info('CONFIG %s: %s' % (p, str(server.params[p])))
+    for p in sorted(server.params):
+        logger.info(f"CONFIG {p}: {server.params[p]}")
 
-    # Create and configure the data extraction
     server.data_extractor = MiniseedDataExtractor(
-        params['datapath_replace'], params['request_limit'])
+        params["datapath_replace"], params["request_limit"]
+    )
 
     server.serve_forever()
 
 
 class ConfigError(Exception):
-    def __init__(self, message):
-        self.message = message
+    """Raised when the server configuration is invalid."""
 
 
-def verify_configuration(params, level=0):
-    '''Verify the server's configuration.
+def verify_configuration(params: dict) -> None:
+    """
+    Verify the server configuration.
 
-    Open the database, check for index table, check for summary table.
-    '''
+    Checks that the database file exists and contains a recognised index table
+    (and optionally a recognised summary table).
 
-    # Database file exists
-    if not os.path.isfile(params['dbfile']):
-        raise ConfigError("Cannot find database file '%s'" % params['dbfile'])
+    :raises ConfigError: On any configuration problem.
+    """
+    if not os.path.isfile(params["dbfile"]):
+        raise ConfigError(f"Cannot find database file '{params['dbfile']}'")
 
-    # Database can be opened
     try:
-        conn = sqlite3.connect(params['dbfile'], 10.0)
+        conn = sqlite3.connect(params["dbfile"], 10.0)
     except Exception as err:
-        raise ConfigError("Cannot open database: " + str(err))
+        raise ConfigError(f"Cannot open database: {err}") from err
 
-    cur = conn.cursor()
+    try:
+        cur = conn.cursor()
 
-    # Specified index table exists
-    cur.execute("SELECT count(*) FROM sqlite_master WHERE type='table' and name='%s'" % params['index_table'])
-    if not cur.fetchone()[0]:
-        raise ConfigError("Cannot find index table '%s' in database" % params['index_table'])
-
-    # Fetch index table definition and construct a dictionary for comparison
-    cur.execute("PRAGMA table_info('%s')" % params['index_table'])
-    index_schema = dict()
-    for row in cur.fetchall():
-        index_schema[row[1].lower()] = row[2].lower()
-
-    # Definition of time series index schema version 1.0
-    index_version10 = {'network': 'text', 'station': 'text', 'location': 'text',
-                       'channel': 'text', 'quality': 'text',
-                       'starttime': 'text', 'endtime': 'text',
-                       'samplerate': 'real', 'filename': 'text',
-                       'byteoffset': 'integer', 'bytes': 'integer',
-                       'hash': 'text', 'timeindex': 'text',
-                       'timespans': 'text', 'timerates': 'text',
-                       'format': 'text', 'filemodtime': 'text',
-                       'updated': 'text', 'scanned': 'text'}
-
-    # Definition of time series index schema version 1.1
-    index_version11 = {'network': 'text', 'station': 'text', 'location': 'text',
-                       'channel': 'text', 'quality': 'text', 'version' : 'integer',
-                       'starttime': 'text', 'endtime': 'text',
-                       'samplerate': 'real', 'filename': 'text',
-                       'byteoffset': 'integer', 'bytes': 'integer',
-                       'hash': 'text', 'timeindex': 'text',
-                       'timespans': 'text', 'timerates': 'text',
-                       'format': 'text', 'filemodtime': 'text',
-                       'updated': 'text', 'scanned': 'text'}
-
-    # Index table schema is version 1.0
-    if index_schema != index_version10 and index_schema != index_version11:
-        raise ConfigError("Schema for index table %s is not recognized" % params['index_table'])
-
-    if 'summary_table' in params:
-        # The summary table exists
-        cur.execute("SELECT count(*) FROM sqlite_master WHERE type='table' and name='%s'" % params['summary_table'])
+        cur.execute(
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?",
+            (params["index_table"],),
+        )
         if not cur.fetchone()[0]:
-            raise ConfigError("Cannot find summary table '%s' in database" % params['summary_table'])
+            raise ConfigError(f"Cannot find index table '{params['index_table']}' in database")
 
-        # Fetch summary table definition and construct a dictionary for comparison
-        cur.execute("PRAGMA table_info('%s')" % params['summary_table'])
-        summary_schema = dict()
-        for row in cur.fetchall():
-            summary_schema[row[1].lower()] = row[2].lower() if row[2] != '' else 'text'
+        cur.execute(f"PRAGMA table_info('{params['index_table']}')")
+        index_schema: dict[str, str] = {row[1].lower(): row[2].lower() for row in cur.fetchall()}
 
-        # Definition of summary schema version 1.0
-        summary_version10 = {'network': 'text', 'station': 'text',
-                             'location': 'text', 'channel': 'text',
-                             'earliest': 'text', 'latest': 'text',
-                             'updt': 'text'}
+        index_version10: dict[str, str] = {
+            "network": "text", "station": "text", "location": "text",
+            "channel": "text", "quality": "text",
+            "starttime": "text", "endtime": "text",
+            "samplerate": "real", "filename": "text",
+            "byteoffset": "integer", "bytes": "integer",
+            "hash": "text", "timeindex": "text",
+            "timespans": "text", "timerates": "text",
+            "format": "text", "filemodtime": "text",
+            "updated": "text", "scanned": "text",
+        }
+        index_version11 = {**index_version10, "version": "integer"}
 
-        # Summary table schema is version 1.0
-        if summary_schema != summary_version10:
-            raise ConfigError("Schema for summary table %s is not recognized" % params['index_table'])
-    else:
-        logger.warning("No summary table configured.  Such a table is strongly recommended.")
+        if index_schema != index_version10 and index_schema != index_version11:
+            raise ConfigError(
+                f"Schema for index table {params['index_table']} is not recognized"
+            )
 
-    conn.close()
+        if "summary_table" in params:
+            cur.execute(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?",
+                (params["summary_table"],),
+            )
+            if not cur.fetchone()[0]:
+                raise ConfigError(
+                    f"Cannot find summary table '{params['summary_table']}' in database"
+                )
 
-    return
+            cur.execute(f"PRAGMA table_info('{params['summary_table']}')")
+            summary_schema: dict[str, str] = {
+                row[1].lower(): (row[2].lower() if row[2] != "" else "text")
+                for row in cur.fetchall()
+            }
+
+            summary_version10: dict[str, str] = {
+                "network": "text", "station": "text",
+                "location": "text", "channel": "text",
+                "earliest": "text", "latest": "text",
+                "updt": "text",
+            }
+
+            if summary_schema != summary_version10:
+                raise ConfigError(
+                    f"Schema for summary table {params['index_table']} is not recognized"
+                )
+        else:
+            logger.warning("No summary table configured.  Such a table is strongly recommended.")
+    finally:
+        conn.close()
 
 
-def main():
-    '''
-    Read/validate options; read config file; set up logging
-    Run the server
-    '''
-    global logger
-
-    # Build argument parser
-    parser = argparse.ArgumentParser(description='Portable fdsnws-dataselect server')
-    parser.add_argument('configfile', nargs='?', action='store')
-    parser.add_argument("-V", "--version",
-                        action="store_true", dest="version", default=False,
-                        help="Print server and Python version and quit")
-    parser.add_argument("-s", "--sample_config",
-                        action="store_true", dest="genconfig", default=False,
-                        help="Generate a sample config file and quit")
-    parser.add_argument("-i", "--init",
-                        action="store_true", dest="initialize", default=False,
-                        help="Initialize auxiliary tables in database and quit")
-    parser.add_argument("-cd", "--copy_docs",
-                        action="store", dest="docpath",
-                        help="Copy documentation web pages to the given directory and quit")
+def main() -> None:
+    """Parse arguments, read config, configure logging, and start the server."""
+    parser = argparse.ArgumentParser(description="Portable fdsnws-dataselect server")
+    parser.add_argument("configfile", nargs="?", action="store")
+    parser.add_argument(
+        "-V", "--version",
+        action="store_true", dest="version", default=False,
+        help="Print server and Python version and quit",
+    )
+    parser.add_argument(
+        "-s", "--sample_config",
+        action="store_true", dest="genconfig", default=False,
+        help="Generate a sample config file and quit",
+    )
+    parser.add_argument(
+        "-i", "--init",
+        action="store_true", dest="initialize", default=False,
+        help="Initialize auxiliary tables in database and quit",
+    )
+    parser.add_argument(
+        "-cd", "--copy_docs",
+        action="store", dest="docpath",
+        help="Copy documentation web pages to the given directory and quit",
+    )
 
     args = parser.parse_args()
 
-    # Print versions
     if args.version:
-        print('portable-fdsnws-dataselect %s' % ".".join(str(i) for i in version))
-        print('Running under Python %s' % python_version())
+        print(f"portable-fdsnws-dataselect {__version__}")
+        print(f"Running under Python {python_version()}")
         sys.exit(0)
 
-    # Print sample configuration file
     if args.genconfig:
-        with open(os.path.join(os.path.dirname(pkg_path), 'example', 'server.ini'), 'r') as f:
+        with open(os.path.join(os.path.dirname(pkg_path), "example", "server.ini")) as f:
             print(f.read())
         sys.exit(0)
 
-    # Copy documentation
     if args.docpath:
         if not os.path.exists(args.docpath):
-            print("Can't copy documentation to nonexistent path '%s'" % args.docpath)
+            print(f"Can't copy documentation to nonexistent path '{args.docpath}'")
             sys.exit(1)
-        srcpath = os.path.join(os.path.dirname(pkg_path), 'docs')
-        filenames = os.listdir(srcpath)
-        for filename in filenames:
-            (_root, ext) = os.path.splitext(filename)
-            if ext in ('.html', '.css',):
-                dst = copyfile(os.path.join(srcpath, filename), os.path.join(args.docpath, filename))
-                print("Created '%s'" % dst)
+        srcpath = os.path.join(os.path.dirname(pkg_path), "docs")
+        for filename in os.listdir(srcpath):
+            _, ext = os.path.splitext(filename)
+            if ext in (".html", ".css"):
+                dst = copyfile(
+                    os.path.join(srcpath, filename),
+                    os.path.join(args.docpath, filename),
+                )
+                print(f"Created '{dst}'")
         sys.exit(0)
 
     if not args.configfile:
-        parser.error('No database file is specified.  Try -h for more help.')
+        parser.error("No database file is specified.  Try -h for more help.")
 
-    # Check for and read config file
     if not os.path.exists(args.configfile):
-        print("Configuration file '%s' does not exist" % args.configfile)
+        print(f"Configuration file '{args.configfile}' does not exist")
         sys.exit(1)
 
     config = ConfigParser()
     config.read(args.configfile)
 
-    # Set up logging
-    if config.has_option('logging', 'path'):
-        log_path = config.get('logging', 'path')
+    # -- logging ---------------------------------------------------------------
 
-        level_name = 'INFO'
-        level_names = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
-
-        if config.has_option('logging', 'level'):
-            level_name = config.get('logging', 'level').upper()
-
+    if config.has_option("logging", "path"):
+        log_path = config.get("logging", "path")
+        level_names = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        level_name = config.get("logging", "level", fallback="INFO").upper()
         if level_name not in level_names:
-            logger.critical("logging level '%s' not valid, exiting!" % level_name)
-            sys.exit(1)
+            _config_exit(f"logging level '{level_name}' not valid, exiting!")
 
-        log_config = {
-            'version': 1,
-            'disable_existing_loggers': False,
-            'formatters': {
-                'default': {'format': '%(asctime)s - %(levelname)s - %(message)s',
-                            'datefmt': '%Y-%m-%d %H:%M:%S'},
+        logging.config.dictConfig({
+            "version": 1,
+            "disable_existing_loggers": False,
+            "formatters": {
+                "default": {
+                    "format": "%(asctime)s - %(levelname)s - %(message)s",
+                    "datefmt": "%Y-%m-%d %H:%M:%S",
+                },
             },
-            'handlers': {
-                'file': {
-                    'class': 'logging.handlers.TimedRotatingFileHandler',
-                    'level': level_name,
-                    'filename': log_path,
-                    'formatter': 'default',
-                    'when': 'd',
-                    'interval': 1
-                }
+            "handlers": {
+                "file": {
+                    "class": "logging.handlers.TimedRotatingFileHandler",
+                    "level": level_name,
+                    "filename": log_path,
+                    "formatter": "default",
+                    "when": "d",
+                    "interval": 1,
+                },
             },
-            'loggers': {
-                '': {'handlers': ['file'],
-                     'level': level_name,
-                     'propagate': True,
-                }
-            }
-        }
-        logging.config.dictConfig(log_config)
-
+            "loggers": {
+                "": {"handlers": ["file"], "level": level_name, "propagate": True},
+            },
+        })
     else:
-        # If no log file defined set log level for no output
         logging.getLogger().setLevel(99)
 
-    # Validate, set defaults and map config file options to params
-    params = dict()
+    # -- configuration parsing -------------------------------------------------
 
-    # Database file, required
-    if config.has_option('index_db', 'path'):
-        params['dbfile'] = config.get('index_db', 'path')
+    params: dict = {}
 
+    if config.has_option("index_db", "path"):
+        params["dbfile"] = config.get("index_db", "path")
     else:
-        msg = "Required database file (index_db:path) is not specified"
-        logger.critical(msg)
-        print(msg)
-        sys.exit(1)
+        _config_exit("Required database file (index_db:path) is not specified")
 
-    # Index table
-    if config.has_option('index_db', 'table'):
-        params['index_table'] = config.get('index_db', 'table')
+    params["index_table"] = config.get("index_db", "table", fallback="tsindex")
+
+    if config.has_option("index_db", "summary_table"):
+        params["summary_table"] = config.get("index_db", "summary_table")
+
+    if config.has_option("index_db", "datapath_replace"):
+        raw = config.get("index_db", "datapath_replace")
+        parts = raw.split(",")
+        if len(parts) != 2:
+            _config_exit(
+                f"datapath substitution must be two strings separated by a comma, not '{raw}', exiting!"
+            )
+        params["datapath_replace"] = (parts[0].strip(' "'), parts[1].strip(' "'))
     else:
-        params['index_table'] = 'tsindex'
+        params["datapath_replace"] = False
 
-    # Summary table
-    if config.has_option('index_db', 'summary_table'):
-        params['summary_table'] = config.get('index_db', 'summary_table')
+    params["interface"] = config.get("server", "interface", fallback="")
+    params["port"] = _get_int(config, "server", "port", 80, min_val=1, max_exclusive=True)
+    params["request_limit"] = _get_int(config, "server", "request_limit", 0, min_val=0)
+    params["username"] = config.get("server", "username", fallback=None)
+    params["password"] = config.get("server", "password", fallback=None)
 
-    # Data file path substitution
-    if config.has_option('index_db', 'datapath_replace'):
-        subop = config.get('index_db', 'datapath_replace').split(",")
+    if bool(params["username"]) != bool(params["password"]):
+        _config_exit("Username and password must be specified together, exiting")
 
-        if len(subop) != 2:
-            msg = "datapath substition must be two strings separated by a comma not '%s', exiting!" % config.get('index_db', 'datapath_replace')
-            logger.critical(msg)
-            print(msg)
-            sys.exit(1)
+    params["maxsectiondays"] = _get_int(config, "server", "maxsectiondays", 10, min_val=1, max_exclusive=True)
+    params["docroot"] = config.get("server", "docroot", fallback="")
 
-        # Store replacement while stripping surrounding spaces and double quote
-        params['datapath_replace'] = (subop[0].strip(' "'), subop[1].strip(' "'))
-
-    else:
-        params['datapath_replace'] = False
-
-    # Server interface/address
-    if config.has_option('server', 'interface'):
-        params['interface'] = config.get('server', 'interface')
-    else:
-        params['interface'] = ''
-
-    # Server port
-    if config.has_option('server', 'port'):
+    if config.has_option("server", "show_directories"):
         try:
-            params['port'] = int(config.get('server', 'port'))
-
-            if params['port'] <= 0:
-                msg = "Config server:port must be a positive integer, not %d" % params['port']
-                logger.critical(msg)
-                print(msg)
-                sys.exit(1)
-
+            params["show_directories"] = config.getboolean("server", "show_directories")
         except ValueError:
-            msg = "Config server:port (%s) is not an integer" % config.get('server', 'port')
-            logger.critical(msg)
-            print(msg)
-            sys.exit(1)
+            params["show_directories"] = False
     else:
-        params['port'] = 80
+        params["show_directories"] = False
 
-    # Request limit in bytes
-    if config.has_option('server', 'request_limit'):
-        try:
-            params['request_limit'] = int(config.get('server', 'request_limit'))
-
-            if params['request_limit'] < 0:
-                msg = "Config server:request_limit must be >= 0, not %d" % params['request_limit']
-                logger.critical(msg)
-                print(msg)
-                sys.exit(1)
-
-        except ValueError:
-            msg = "Config server:request_limit (%s) is not an integer" % config.get('server', 'request_limit')
-            logger.critical(msg)
-            print(msg)
-            sys.exit(1)
+    if config.has_option("logging", "shiplogdir"):
+        params["shiplogdir"] = config.get("logging", "shiplogdir")
+        if not os.path.isdir(params["shiplogdir"]):
+            _config_exit(
+                f"Cannot find shipment logging directory at '{params['shiplogdir']}', exiting!"
+            )
     else:
-        params['request_limit'] = 0
+        params["shiplogdir"] = None
 
-    # User name and password
-    if config.has_option('server', 'username'):
-        params['username'] = config.get('server', 'username')
-    else:
-        params['username'] = None
-    if config.has_option('server', 'password'):
-        params['password'] = config.get('server', 'password')
-    else:
-        params['password'] = None
+    # -- initialization --------------------------------------------------------
 
-    if (params['username'] and not params['password']) or (params['password'] and not params['username']):
-        msg = "Username and password must be specified together, exiting"
-        logger.critical(msg)
-        print(msg)
-        sys.exit(1)
-
-    # Max section days
-    if config.has_option('server', 'maxsectiondays'):
-        try:
-            params['maxsectiondays'] = int(config.get('server', 'maxsectiondays'))
-
-            if params['maxsectiondays'] <= 0:
-                msg = "Config server:maxsectiondays must be > 0, not %d" % params['maxsectiondays']
-                logger.critical(msg)
-                print(msg)
-                sys.exit(1)
-
-        except ValueError:
-            msg = "Config server:maxsectiondays (%s) is not an integer" % config.get('server', 'maxsectiondays')
-            logger.critical(msg)
-            print(msg)
-            sys.exit(1)
-    else:
-        params['maxsectiondays'] = 10
-
-    # Static document root
-    if config.has_option('server', 'docroot'):
-        params['docroot'] = config.get('server', 'docroot')
-    else:
-        params['docroot'] = ''
-
-    # Show directory listings?
-    if config.has_option('server', 'show_directories'):
-        try:
-            params['show_directories'] = config.getboolean('server', 'show_directories')
-        except ValueError:
-            params['show_directories'] = False
-    else:
-        params['show_directories'] = False
-
-    # Shipment logging directory
-    if config.has_option('logging', 'shiplogdir'):
-        params['shiplogdir'] = config.get('logging', 'shiplogdir')
-
-        if not os.path.isdir(params['shiplogdir']):
-            msg = "Cannot find shipment logging directory at '%s', exiting!" % params['shiplogdir']
-            logger.critical(msg)
-            print(msg)
-            sys.exit(1)
-    else:
-        params['shiplogdir'] = None
-
-    # Perform initialization of summary table in DB if requested
     if args.initialize:
-        if 'summary_table' in params:
-            logger.info("Initializing summary table %s" % params['summary_table'])
-            print("Initializing summary table %s" % params['summary_table'])
-
+        if "summary_table" in params:
+            logger.info(f"Initializing summary table {params['summary_table']}")
+            print(f"Initializing summary table {params['summary_table']}")
             try:
-                conn = sqlite3.connect(params['dbfile'], 10.0)
+                conn = sqlite3.connect(params["dbfile"], 10.0)
             except Exception as err:
-                logger.error("Could not connect to DB for initialization: %s" % str(err))
+                logger.error(f"Could not connect to DB for initialization: {err}")
                 return
-
             try:
                 c = conn.cursor()
-                c.execute("DROP TABLE IF EXISTS %s;" % params['summary_table'])
-                c.execute("CREATE TABLE {0} AS"
-                          "  SELECT network,station,location,channel,"
-                          "  min(starttime) AS earliest, max(endtime) AS latest, datetime('now') as updt"
-                          "  FROM {1}"
-                          "  GROUP BY 1,2,3,4;".format(params['summary_table'], params['index_table']))
+                c.execute(f"DROP TABLE IF EXISTS {params['summary_table']};")
+                c.execute(
+                    f"CREATE TABLE {params['summary_table']} AS"
+                    "  SELECT network,station,location,channel,"
+                    "  min(starttime) AS earliest, max(endtime) AS latest, datetime('now') as updt"
+                    f"  FROM {params['index_table']}"
+                    "  GROUP BY 1,2,3,4;"
+                )
                 conn.commit()
             except Exception as err:
-                logger.error("Could not run initialization query: %s" % str(err))
+                logger.error(f"Could not run initialization query: {err}")
                 return
-
-            conn.close()
+            finally:
+                conn.close()
             logger.info("Initialization completed successfully")
             sys.exit(0)
         else:
             print("Cannot initialize, summary table is not defined in the configuration")
             sys.exit(1)
 
-    # Verify configuration details
+    # -- verify config then start server ---------------------------------------
+
     try:
-        verify_configuration(params, level=0)
+        verify_configuration(params)
     except ConfigError as err:
-        print(err.message)
+        msg = str(err)
+        print(msg)
         print("Configuration error, exiting.")
-        logger.critical(err.message)
+        logger.critical(msg)
         logger.critical("Configuration error, exiting.")
         sys.exit(1)
     except Exception:
-        import traceback
-        traceback.print_exc()
+        logger.exception("Unexpected error verifying configuration")
 
-    # Start the server!
     try:
         run_server(params)
-
     except (KeyboardInterrupt, SystemExit):
         logger.info("shutting down")
         print("\nshutting down")
-
     except Exception:
-        import traceback
-        traceback.print_exc()
+        logger.exception("Unexpected server error")
 
 
 if __name__ == "__main__":

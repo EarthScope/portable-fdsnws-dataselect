@@ -1,69 +1,129 @@
-# -*- coding: utf-8 -*-
 """
-Data extraction and transfer from miniSEED files
+Data extraction and transfer from miniSEED files.
 """
 
-import re
+import math
 import os
 import bisect
-
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from logging import getLogger
-from collections import namedtuple
+from typing import Generator, NamedTuple, Optional
+
 from pymseed import MS3Record, NSTMODULUS, sample_time, timestr2nstime
+
 from portable_fdsnws_dataselect.msriterator import MSR_iterator
 
 logger = getLogger(__name__)
 
 
 class NoDataError(Exception):
-    """
-    Error raised when no data is found
-    """
-    pass
+    """Raised when no data matches the request."""
 
 
 class RequestLimitExceededError(Exception):
-    """
-    Error raised when the amount of data exceeds the configured limit
-    """
-    pass
+    """Raised when the result would exceed the configured byte limit."""
 
 
-class ExtractedDataSegment(object):
-    """
-    There are a few different forms that a chunk of extracted data can take, so we return
-    a wrapped object that exposes a simple, consistent API for the handler to use.
-    """
-    def write(self, wfile):
-        """
-        Write the data to the given file-like object
-        """
-        raise NotImplementedError()
+class _TrimBound(NamedTuple):
+    """One side of a byte-range trim window."""
 
-    def get_num_bytes(self):
-        """
-        Return the number of bytes in the segment
-        """
-        raise NotImplementedError()
+    offset: int
+    needs_trim: bool
 
-    def get_src_name(self):
-        """
-        Return the name of the data source
-        """
-        raise NotImplementedError()
+
+class ExtractedDataSegment(ABC):
+    """Abstract base for a chunk of extracted miniSEED data."""
+
+    src_name: str
+
+    @abstractmethod
+    def write(self, wfile) -> None:
+        """Write the data to *wfile*."""
+
+    @property
+    @abstractmethod
+    def num_bytes(self) -> int:
+        """Number of bytes in this segment."""
+
+
+def trim_record(msr: MS3Record, earliest: int, latest: int) -> Optional[bytes]:
+    """Trim a miniSEED record to the specified time window.
+
+    If the record samples could not be decompressed or could not be
+    trimmed, the original record is returned.
+
+    :param msr: Parsed MS3Record (data need not be unpacked yet).
+    :param earliest: Earliest time to retain, nanoseconds since Unix epoch.
+    :param latest: Latest time to retain, nanoseconds since Unix epoch.
+    :returns: Trimmed record bytes, original record on failure, or
+              ``None`` if the record has no time coverage.
+    """
+    if msr.samplecnt == 0 and msr.samprate == 0.0:
+        return None
+
+    try:
+        msr.unpack_data()
+    except Exception:
+        return msr.record
+
+    starttime = msr.starttime
+    endtime = msr.endtime
+    sample_period_ns = msr.samprate_period_ns
+
+    startidx = None
+    endidx = None
+
+    # Trim early samples to the earliest time
+    if earliest and starttime < earliest <= endtime:
+        startidx = math.ceil((earliest - starttime) / sample_period_ns)
+        # Correct for truncated period_ns on non-round sample rates:
+        # the true time of the previous sample may still be >= earliest.
+        if startidx > 0 and sample_time(starttime, startidx - 1, msr.samprate) >= earliest:
+            startidx -= 1
+        msr.starttime = sample_time(starttime, startidx, msr.samprate)
+
+    # Trim late samples to the latest time
+    if latest and starttime <= latest < endtime:
+        count = math.ceil((endtime - latest) / sample_period_ns)
+        # Correct: the first "removed" sample may actually be <= latest.
+        if count > 0 and sample_time(starttime, msr.samplecnt - count, msr.samprate) <= latest:
+            count -= 1
+        if count > 0:
+            endidx = -count
+
+    # Retain record sequence number for version 2 miniSEED
+    if msr.formatversion == 2:
+        sequence_number = msr.record[:6]
+        msr.set_extra_header("/FDSN/Sequence", int(sequence_number.decode()))
+
+    repacked = bytearray()
+    for record in msr.generate(
+        data_samples=msr.datasamples[startidx:endidx],
+        sample_type=msr.sampletype,
+    ):
+        repacked.extend(record)
+
+    return bytes(repacked) if repacked else msr.record
 
 
 class MSRIDataSegment(ExtractedDataSegment):
-    """
-    Segment of data from a MSR_iterator
-    """
-    def __init__(self, msri, sample_rate, start_time, end_time, src_name):
+    """Segment of data backed by an active MSR_iterator record."""
+
+    def __init__(
+        self,
+        msri: MSR_iterator,
+        sample_rate: float,
+        start_time: int,
+        end_time: int,
+        src_name: str,
+    ) -> None:
         """
-        :param msri: A `MSR_iterator`
-        :param sample_rate: Sample rate of the data
-        :param start_time: Start of the requested data as nanoseconds since Unix epoch
-        :param end_time: End of the requested data as nanoseconds since Unix epoch
-        :param src_name: Name of the data source for logging
+        :param msri: Active MSR_iterator positioned at the desired record.
+        :param sample_rate: Nominal sample rate of the data.
+        :param start_time: Request start time as nanoseconds since Unix epoch.
+        :param end_time: Request end time as nanoseconds since Unix epoch.
+        :param src_name: Source name string used in log messages.
         """
         self.msri = msri
         self.sample_rate = sample_rate
@@ -71,232 +131,218 @@ class MSRIDataSegment(ExtractedDataSegment):
         self.end_time = end_time
         self.src_name = src_name
 
-    def write(self, wfile):
-        msrstart = self.msri.get_startepoch()
-        msrend = self.msri.get_endepoch()
+    def write(self, wfile) -> None:
+        msr_start_ns = self.msri.get_starttime()
+        msr_end_ns = self.msri.get_endtime()
 
-        sepoch = self.start_time / NSTMODULUS
-        eepoch = self.end_time / NSTMODULUS
+        if msr_start_ns > self.end_time or msr_end_ns < self.start_time:
+            return
 
-        # Process records that intersect with request time window
-        if msrstart <= eepoch and msrend >= sepoch:
+        if self.sample_rate > 0 and (msr_start_ns < self.start_time or msr_end_ns > self.end_time):
+            logger.debug(f"Trimming record {self.src_name} @ {msr_start_ns}")
+            trimmed = trim_record(self.msri.msr, self.start_time, self.end_time)
+            if trimmed:
+                wfile.write(trimmed)
+        else:
+            logger.debug(f"Writing full record {self.src_name} @ {msr_start_ns}")
+            wfile.write(bytes(self.msri.msr.record_mv))
 
-            # Trim record if coverage and partial overlap with request
-            if self.sample_rate > 0 and (msrstart < sepoch or msrend > eepoch):
-                logger.debug("Trimming record %s @ %s" % (self.src_name, self.msri.get_starttime()))
-
-                record_bytes = self.msri.msr.record
-                for rec in MS3Record.from_buffer(record_bytes, unpack_data=True):
-                    period_ns = rec.samprate_period_ns
-                    rec_start_ns = rec.starttime
-                    rec_end_ns = rec.endtime
-
-                    # First sample at or after requested start (ceiling division)
-                    if self.start_time > rec_start_ns:
-                        start_idx = -(-(self.start_time - rec_start_ns) // period_ns)
-                    else:
-                        start_idx = 0
-
-                    # Last sample at or before requested end (floor division)
-                    if self.end_time < rec_end_ns:
-                        end_idx = (self.end_time - rec_start_ns) // period_ns
-                    else:
-                        end_idx = rec.numsamples - 1
-
-                    if start_idx > end_idx or start_idx >= rec.numsamples:
-                        return
-
-                    trimmed_samples = list(rec.datasamples[start_idx:end_idx + 1])
-                    new_starttime = sample_time(rec_start_ns, start_idx, rec.samprate)
-
-                    out_rec = MS3Record()
-                    out_rec.sourceid = rec.sourceid
-                    out_rec.starttime = new_starttime
-                    out_rec.samprate = rec.samprate_raw
-                    out_rec.encoding = rec.encoding
-                    out_rec.pubversion = rec.pubversion
-                    out_rec.formatversion = rec.formatversion
-                    out_rec.reclen = rec.reclen
-
-                    for packed_record in out_rec.generate(
-                            data_samples=trimmed_samples, sample_type=rec.sampletype):
-                        wfile.write(packed_record)
-
-            # Otherwise, write un-trimmed record
-            else:
-                logger.debug("Writing full record %s @ %s" % (self.src_name, self.msri.get_starttime()))
-                wfile.write(bytes(self.msri.msr.record_mv))
-
-    def get_num_bytes(self):
+    @property
+    def num_bytes(self) -> int:
         return self.msri.msr.reclen
-
-    def get_src_name(self):
-        return self.src_name
 
 
 class FileDataSegment(ExtractedDataSegment):
-    """
-    Segment of data that comes directly from a data file
-    """
-    def __init__(self, filename, start_byte, num_bytes, src_name):
-        """
-        :param filename: Name of data file
-        :param start_byte: Return data starting from this offset
-        :param num_bytes: Length of data to return
-        :param src_name: Name of the data source for logging
-        """
+    """Segment of data read directly from a byte range in a file."""
+
+    def __init__(
+        self,
+        filename: str,
+        start_byte: int,
+        num_bytes: int,
+        src_name: str,
+    ) -> None:
         self.filename = filename
         self.start_byte = start_byte
-        self.num_bytes = num_bytes
+        self._num_bytes = num_bytes
         self.src_name = src_name
 
-    def write(self, wfile):
+    def write(self, wfile) -> None:
         with open(self.filename, "rb") as f:
             f.seek(self.start_byte)
-            raw_data = f.read(self.num_bytes)
-            wfile.write(raw_data)
+            wfile.write(f.read(self._num_bytes))
 
-    def get_num_bytes(self):
-        return self.num_bytes
-
-    def get_src_name(self):
-        return self.src_name
+    @property
+    def num_bytes(self) -> int:
+        return self._num_bytes
 
 
-class MiniseedDataExtractor(object):
-    """
-    Component for extracting, trimming, and validating data.
-    """
-    def __init__(self, dp_replace=None, request_limit=0):
+@dataclass(frozen=True, slots=True)
+class _RequestRow:
+    """Internal row used during data extraction pre-scan."""
+
+    srcname: str
+    filename: str
+    starttime: int
+    endtime: int
+    start: _TrimBound
+    end: _TrimBound
+    bytes: int
+    samplerate: float
+
+
+class MiniseedDataExtractor:
+    """Extract, trim, and validate miniSEED data segments."""
+
+    def __init__(
+        self,
+        dp_replace: Optional[tuple[str, str]] = None,
+        request_limit: int = 0,
+    ) -> None:
         """
-        :param dp_replace: optional tuple of (regex, replacement) indicating the location of data files
-        :param request_limit: optional limit (in bytes) on how much data can be extracted at once
+        :param dp_replace: Optional ``(regex, replacement)`` for rewriting data file paths.
+        :param request_limit: Maximum number of bytes allowed per request (0 = unlimited).
         """
+        import re
+
         if dp_replace:
-            self.dp_replace_re = re.compile(dp_replace[0])
-            self.dp_replace_sub = dp_replace[1]
+            self._dp_replace_re = re.compile(dp_replace[0])
+            self._dp_replace_sub = dp_replace[1]
         else:
-            self.dp_replace_re = None
-            self.dp_replace_sub = None
+            self._dp_replace_re = None
+            self._dp_replace_sub = None
         self.request_limit = request_limit
 
-    def handle_trimming(self, stime, etime, NRow):
+    def handle_trimming(
+        self, stime: int, etime: int, NRow
+    ) -> tuple[_TrimBound, _TrimBound]:
         """
-        Get the time & byte-offsets for the data in time range (stime, etime).
+        Return byte-offset trim bounds for the data in ``[stime, etime]``.
 
-        This is done by finding the smallest section of the data in row that
-        falls within the desired time range and is identified by the timeindex
-        field of row.
+        Uses the ``timeindex`` field of *NRow* to find the tightest byte range
+        that covers the requested window.
 
-        :param stime: Start time as nanoseconds since Unix epoch
-        :param etime: End time as nanoseconds since Unix epoch
-        :returns: [(start time epoch, start offset, trim_boolean),
-                   (end time epoch, end offset, trim_boolean)]
+        :param stime: Request start time as nanoseconds since Unix epoch.
+        :param etime: Request end time as nanoseconds since Unix epoch.
+        :returns: ``(_TrimBound(offset, needs_trim), _TrimBound(offset, needs_trim))``
         """
-
         row_stime = timestr2nstime(NRow.starttime)
         row_etime = timestr2nstime(NRow.endtime)
 
-        # If we need a subset of the this block, trim it accordingly
         block_start = int(NRow.byteoffset)
         block_end = block_start + int(NRow.bytes)
+
         if stime > row_stime or etime < row_etime:
-            tix = [x.split("=>") for x in NRow.timeindex.split(",")]
-            if tix[-1][0] == 'latest':
-                tix[-1] = [str(row_etime / NSTMODULUS), block_end]
-            to_x = [float(x[0]) for x in tix]
-            s_index = bisect.bisect_left(to_x, stime / NSTMODULUS) - 1
+            entries = [x.split("=>") for x in NRow.timeindex.split(",")]
+
+            # Parse timeindex into parallel ns-time and byte-offset lists.
+            # The timeindex stores epoch-second strings; convert to nanoseconds.
+            times_ns: list[int] = []
+            offsets: list[int] = []
+            for entry in entries:
+                if entry[0] == "latest":
+                    times_ns.append(row_etime)
+                else:
+                    times_ns.append(int(float(entry[0]) * NSTMODULUS))
+                offsets.append(int(entry[1]))
+
+            s_index = bisect.bisect_left(times_ns, stime) - 1
             if s_index < 0:
                 s_index = 0
-            e_index = bisect.bisect_right(to_x, etime / NSTMODULUS)
-            off_start = int(tix[s_index][1])
-            if e_index >= len(tix):
+            e_index = bisect.bisect_right(times_ns, etime)
+            if e_index >= len(times_ns):
                 e_index = -1
-            off_end = int(tix[e_index][1])
-            return ([to_x[s_index], off_start, stime > row_stime],
-                    [to_x[e_index], off_end, etime < row_etime],)
+
+            return (
+                _TrimBound(offsets[s_index], stime > row_stime),
+                _TrimBound(offsets[e_index], etime < row_etime),
+            )
         else:
-            return ([row_stime / NSTMODULUS, block_start, False],
-                    [row_etime / NSTMODULUS, block_end, False])
+            return (
+                _TrimBound(block_start, False),
+                _TrimBound(block_end, False),
+            )
 
-    def extract_data(self, index_rows):
+    def extract_data(
+        self, index_rows
+    ) -> Generator[ExtractedDataSegment, None, None]:
         """
-        Perform the data extraction.
+        Yield :class:`ExtractedDataSegment` objects for all matching data.
 
-        :param index_rows: requested data, as produced by `HTTPServer_RequestHandler.fetch_index_rows`
-        :yields: sequence of `ExtractedDataSegment`s
+        :param index_rows: Rows produced by ``fetch_index_rows``.
+        :raises NoDataError: When no bytes match the request.
+        :raises RequestLimitExceededError: When the result would exceed the limit.
         """
-
-        # Pre-scan the index rows:
-        # 1) Build processed list for extraction
-        # 2) Check if the request is small enough to satisfy
-        # Note: accumulated estimate of output bytes will be equal to or higher than actual output
+        # Pre-scan: build the work list and check the size limit.
+        # The byte estimate is >= actual output (compressed data may expand on trim).
         total_bytes = 0
-        request_rows = []
-        Request = namedtuple('Request', ['srcname', 'filename', 'starttime', 'endtime',
-                                         'triminfo', 'bytes', 'samplerate'])
+        request_rows: list[_RequestRow] = []
+
         try:
             for NRow in index_rows:
                 srcname = "_".join(NRow[:4])
                 filename = NRow.filename
 
-                logger.debug("EXTRACT: src=%s, file=%s, bytes=%s, rate:%s" %
-                             (srcname, filename, NRow.bytes, NRow.samplerate))
-
                 starttime = timestr2nstime(NRow.requeststart)
                 endtime = timestr2nstime(NRow.requestend)
 
-                triminfo = self.handle_trimming(starttime, endtime, NRow)
-                total_bytes += triminfo[1][1] - triminfo[0][1]
+                start, end = self.handle_trimming(starttime, endtime, NRow)
+                total_bytes += end.offset - start.offset
                 if self.request_limit > 0 and total_bytes > self.request_limit:
-                    raise RequestLimitExceededError("Result exceeds limit of %d bytes" % self.request_limit)
-                if self.dp_replace_re:
-                    filename = self.dp_replace_re.sub(self.dp_replace_sub, filename)
+                    raise RequestLimitExceededError(
+                        f"Result exceeds limit of {self.request_limit} bytes"
+                    )
+                if self._dp_replace_re:
+                    filename = self._dp_replace_re.sub(self._dp_replace_sub, filename)
                 if not os.path.exists(filename):
-                    raise Exception("Data file does not exist: %s" % filename)
-                request_rows.append(Request(srcname=srcname,
-                                            filename=filename,
-                                            starttime=starttime,
-                                            endtime=endtime,
-                                            triminfo=triminfo,
-                                            bytes=NRow.bytes,
-                                            samplerate=NRow.samplerate))
-                logger.debug("EXTRACT: src=%s, file=%s, bytes=%s, rate:%s" %
-                             (srcname, filename, NRow.bytes, NRow.samplerate))
+                    raise RuntimeError(f"Data file does not exist: {filename}")
+
+                request_rows.append(
+                    _RequestRow(
+                        srcname=srcname,
+                        filename=filename,
+                        starttime=starttime,
+                        endtime=endtime,
+                        start=start,
+                        end=end,
+                        bytes=NRow.bytes,
+                        samplerate=NRow.samplerate,
+                    )
+                )
+        except (RequestLimitExceededError, RuntimeError):
+            raise
         except Exception as err:
-            import traceback
-            traceback.print_exc()
-            raise Exception("Error accessing data index: %s" % str(err))
+            logger.exception("Error scanning data index")
+            raise RuntimeError(f"Error accessing data index: {err}") from err
 
-        # Error if request matches no data
         if total_bytes == 0:
-            raise NoDataError()
+            raise NoDataError
 
-        # Get & return the actual data
         for NRow in request_rows:
-            logger.debug("Extracting %s (%s - %s) from %s" % (NRow.srcname, NRow.starttime,
-                                                              NRow.endtime, NRow.filename))
+            logger.debug(
+                f"Extracting {NRow.srcname} ({NRow.starttime} - {NRow.endtime}) "
+                f"from {NRow.filename}"
+            )
 
-            # Iterate through records in section if only part of the section is needed
-            if NRow.triminfo[0][2] or NRow.triminfo[1][2]:
-
-                for msri in MSR_iterator(filename=NRow.filename,
-                                         startoffset=NRow.triminfo[0][1],
-                                         dataflag=False):
+            if NRow.start.needs_trim or NRow.end.needs_trim:
+                # Iterate record-by-record through the trimmed section
+                for msri in MSR_iterator(
+                    filename=NRow.filename,
+                    startoffset=NRow.start.offset,
+                    dataflag=False,
+                ):
                     offset = msri.get_offset()
 
-                    # Done if we are beyond end offset
-                    if offset >= NRow.triminfo[1][1]:
+                    if offset >= NRow.end.offset:
                         break
 
-                    yield MSRIDataSegment(msri, NRow.samplerate, NRow.starttime,
-                                          NRow.endtime, NRow.srcname)
+                    yield MSRIDataSegment(
+                        msri, NRow.samplerate, NRow.starttime, NRow.endtime, NRow.srcname
+                    )
 
-                    # Check for passing end offset
-                    if (offset + msri.msr.reclen) >= NRow.triminfo[1][1]:
+                    if (offset + msri.msr.reclen) >= NRow.end.offset:
                         break
-
-            # Otherwise, return the entire section
             else:
-                yield FileDataSegment(NRow.filename, NRow.triminfo[0][1],
-                                      NRow.bytes, NRow.srcname)
+                yield FileDataSegment(
+                    NRow.filename, NRow.start.offset, NRow.bytes, NRow.srcname
+                )
