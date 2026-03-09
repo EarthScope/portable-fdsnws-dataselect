@@ -18,58 +18,28 @@ to serve data from a repository.
 
 ## Installing the server
 
-Requirements: Python 3.9 or higher, [pymseed](https://github.com/EarthScope/pymseed) and some common modules.
+Requirements: Python 3.9 or higher.
 
-The instructions below identify key programs as `/path/to/python/bin/<program>`, which should
-be adjusted to wherever your preferred python setup is located.
+Install from [PyPI](https://pypi.python.org/pypi) using `pip`:
 
-### [OPTIONAL] Install a dedicated Python
+```
+pip install portable-fdsnws-dataselect
+```
 
-Any version of Python matching the requirements may be used.  If you
-would prefer to have a dedicated Python installation just for the
-server we recommend installing
-[Miniconda](https://conda.io/miniconda.html) like this:
+To upgrade to a future release:
 
-1. Download [Miniconda](https://conda.io/miniconda.html) for your OS:
-
-    ```
-    https://repo.continuum.io/miniconda/Miniconda3-latest-MacOSX-x86_64.sh
-    https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh
-    https://repo.continuum.io/miniconda/Miniconda3-latest-Windows-x86_64.exe
-    ```
-
-2. Install in a specified directory (`miniconda3`), e.g. for a macOS and Linux:
-
-    ```
-    bash Miniconda3-latest-MacOSX-x86_64.sh -p miniconda3 -b
-    ```
-
-3. Add the conda-forge channel, install pip and ObsPy:
-
-    ```
-    miniconda3/bin/conda config --add channels conda-forge
-    miniconda3/bin/conda install -y pip
-    miniconda3/bin/pip install pymseed
-    ```
-
-### Install the server from [PyPI](https://pypi.python.org/pypi) using `pip`
-
-    /path/to/python/bin/pip install portable-fdsnws-dataselect
-
-If you installed Miniconda as illustrated above the command would be `miniconda3/bin/pip`.
-
-To later upgrade the server to future releases use the following command:
-
-    /path/to/python/bin/pip install -U portable-fdsnws-dataselect
+```
+pip install -U portable-fdsnws-dataselect
+```
 
 ## Running the server
 
-The server is started by using the `/path/to/python/bin/portable-fdsnws-dataselect`
-(e.g. `miniconda3/bin/portable-fdsnws-dataselect`).  But first you must create a server
-configuration file.  The `portable-fdsnws-dataselect` command will print an example
-configuration file if the `-s` option is specified.  To get started:
+First create a server configuration file.  The `portable-fdsnws-dataselect` command will
+print an example configuration file if the `-s` option is specified.  To get started:
 
-    /path/to/python/bin/portable-fdsnws-dataselect -s > server.ini
+```
+portable-fdsnws-dataselect -s > server.ini
+```
 
 Next edit the `server.ini` file, changing values to match your configuration, in particular:
 
@@ -78,13 +48,15 @@ Next edit the `server.ini` file, changing values to match your configuration, in
 
 Finally, run the server specifying the config file:
 
-    /path/to/python/bin/portable-fdsnws-dataselect server.ini
+```
+portable-fdsnws-dataselect server.ini
+```
 
 You should then be able to see the service interface documentation using a web browser
 with an address like `http://ServerHost:ServerPort/`, e.g. `http://localhost:8080/`.
 
 Make sure to look into the server log file (specified in the config file) for errors
-if things are not working as ex
+if things are not working as expected.
 
 ## Preparing your data for use with server
 

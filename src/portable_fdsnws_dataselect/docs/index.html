@@ -40,14 +40,15 @@
   <p>Below is a full list of service parameters and their usage.</p>
 
   <h2>Query Usage</h2>
-  <pre>/query? (date-range-options) [channel-options] [misc-options] [format-options] [nodata=404]</pre>
+  <pre>/query? (date-range-options) [channel-options] [quality-options] [misc-options] [format-options]</pre>
 
 	<p>where</p>
 
-<pre>date-range-options ::  (start=&lt;time&gt;) (end=&lt;time&gt;)
-channel-options    :: 	[net=&lt;network&gt;] [sta=&lt;station&gt;] [loc=&lt;location&gt;] [cha=&lt;channel&gt;]
-misc-options       ::  [nodata=&lt;204|404&gt;]
-format-options     ::  [format=&lt;miniseed&gt;]</pre>
+<pre>date-range-options  ::  (start=&lt;time&gt;) (end=&lt;time&gt;)
+channel-options     ::  [net=&lt;network&gt;] [sta=&lt;station&gt;] [loc=&lt;location&gt;] [cha=&lt;channel&gt;]
+quality-options     ::  [quality=&lt;D|R|Q|M|B&gt;]
+misc-options        ::  [nodata=&lt;204|404&gt;]
+format-options      ::  [format=&lt;miniseed&gt;]</pre>
 
 	<p>(..) required<br />
 [..] optional</p>
@@ -58,11 +59,12 @@ format-options     ::  [format=&lt;miniseed&gt;]</pre>
 
 	<p>Alternately, <em>instead</em> of providing parameter-value pairs in the <span class="caps">URL</span>, a file containing a selection list can be <span class="caps">POST</span>ed to this service.  For additional details, including an example selection file, visit this page&#8217;s help section.</p>
 
-<pre>nodata=&lt;204|404&gt;
+<pre>quality=&lt;D|R|Q|M|B&gt;
+nodata=&lt;204|404&gt;
 &lt;Network&gt; &lt;Station&gt; &lt;Location&gt; &lt;Channel&gt; &lt;StartTime&gt; &lt;EndTime&gt;
 ...</pre>
 
-	<p>Format and nodata are optional.  Wildcards are acceptable for Network, Station, Location, and Channel.  Click <a href="#time">here</a> for time format details.</p>
+	<p>Quality, format, and nodata are optional.  Wildcards are acceptable for Network, Station, Location, and Channel.  Click <a href="#time">here</a> for time format details.</p>
 
   <p>For more details and examples on the expected POST format try the <a href="help.html">Help Page</a>.</p>
 
@@ -211,7 +213,7 @@ Multiple items may also be retrieved using a comma separated list. Wildcards may
     <!-- START: RESTRICTED DATA -->
 <h3>Restricted Data Access</h3>
 
-Restricted access is not implemented in this server.
+<p>Restricted access is not implemented in this server.</p>
 <!--
 <p>For access to restricted data, requests should be sent to:
   <span class="label label-warning">

@@ -1,0 +1,5 @@
+name: EarthScope 
+title: Portable FDSNWS Dataselect Service
+markdown: kramdown
+auto: true
+remote_theme: iris-edu-int/theme_ghpages
