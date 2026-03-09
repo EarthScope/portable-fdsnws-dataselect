@@ -6,6 +6,7 @@ import argparse
 import base64
 import logging.config
 import os
+import socket
 import sqlite3
 import sys
 import threading
@@ -98,8 +99,27 @@ def run_server(params: dict) -> None:
             address: tuple,
             handler_class: type = HTTPServer_RequestHandler,
         ) -> None:
+            host = address[0]
+            if host:
+                try:
+                    socket.inet_pton(socket.AF_INET6, host)
+                    self.address_family = socket.AF_INET6
+                except OSError:
+                    self.address_family = socket.AF_INET
+            else:
+                # No host specified — use IPv6 dual-stack to accept both IPv4 and IPv6
+                self.address_family = socket.AF_INET6
             super().__init__(address, handler_class)
             self.key: str = ""
+
+        def server_bind(self) -> None:
+            if self.address_family == socket.AF_INET6:
+                try:
+                    # Disable IPV6_V6ONLY so IPv4 connections are also accepted
+                    self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+                except (AttributeError, OSError):
+                    pass
+            super().server_bind()
 
         def set_auth(self, username: str, password: str) -> None:
             self.key = base64.b64encode(
@@ -140,8 +160,8 @@ def verify_configuration(params: dict) -> None:
     """
     Verify the server configuration.
 
-    Checks that the database file exists and contains a recognised index table
-    (and optionally a recognised summary table).
+    Checks that the database file exists and contains a recognized index table
+    (and optionally a recognized summary table).
 
     :raises ConfigError: On any configuration problem.
     """
