@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from pymseed import NSTMODULUS, nstime2timestr
 
-from portable_fdsnws_dataselect import pkg_path, __version__
+from portable_fdsnws_dataselect import pkg_path, version, __version__
 from portable_fdsnws_dataselect.miniseed import NoDataError, RequestLimitExceededError
 from portable_fdsnws_dataselect.request import DataselectRequest, NonQueryURLError, QueryError
 
@@ -174,11 +174,12 @@ class HTTPServer_RequestHandler(SimpleHTTPRequestHandler):
 
     def return_version(self) -> None:
         """Return the service version string."""
+        service_version = f"1.1.{version[0]:02}{version[1]:02}{version[2]:02}"
         self.send_response(200)
         self.send_header("Content-type", "text/plain")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-        self.wfile.write(f"{__version__}\n".encode())
+        self.wfile.write(f"{service_version}\n".encode())
 
     def return_wadl(self) -> None:
         """Return the application.wadl document."""
