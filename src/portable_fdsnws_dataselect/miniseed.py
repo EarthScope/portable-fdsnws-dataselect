@@ -177,7 +177,7 @@ class FileDataSegment(ExtractedDataSegment):
         return self._num_bytes
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class _RequestRow:
     """Internal row used during data extraction pre-scan."""
 

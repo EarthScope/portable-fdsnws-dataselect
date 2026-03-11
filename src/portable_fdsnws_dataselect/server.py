@@ -2,6 +2,8 @@
 Server startup, configuration parsing, and thread pool.
 """
 
+from __future__ import annotations
+
 import argparse
 import base64
 import logging.config

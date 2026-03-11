@@ -2,13 +2,14 @@
 FDSN dataselect request parsing and validation.
 """
 
+from __future__ import annotations
+
 import datetime
 import itertools
 import re
 from logging import getLogger
 from urllib.parse import parse_qs, urlparse
 
-from portable_fdsnws_dataselect import version
 
 logger = getLogger(__name__)
 
@@ -117,7 +118,7 @@ class DataselectRequest:
         >>> DataselectRequest.get_path_endpoint(None, '/fdsnws/dataselect/1/query')
         'query'
         """
-        prefix = f"/fdsnws/dataselect/{version[0]}/"
+        prefix = "/fdsnws/dataselect/1/"
         if not path.startswith(prefix):
             raise NonQueryURLError(path)
         tail = path[len(prefix):]
