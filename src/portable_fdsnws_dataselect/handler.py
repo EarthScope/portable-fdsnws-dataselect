@@ -160,9 +160,9 @@ class HTTPServer_RequestHandler(SimpleHTTPRequestHandler):
             f"{err_msg}\n\n"
             f"Usage details are available from {self.prefix}\n\n"
             f"Request:\n{self.format_host()}\n\n"
-            f"Request Submitted:\n{datetime.datetime.now().isoformat()}\n\n"
+            f"Request Submitted:\n{datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')}Z\n\n"
             f"Service version:\n"
-            f"Service: fdsnws-dataselect  version {__version__}\n"
+            f"portable-fdsnws-dataselect v{__version__}\n"
         )
         self.send_response(code)
         self.send_header("Content-type", "text/plain")
