@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.0.1]
+
+- Fix python 3.9 compatibility and versioning in path
+- Update service version to conform to the standard
+
 ## [2.0.0]
 
 - Replace ObsPy usage with pymseed for much smaller requirements.
