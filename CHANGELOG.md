@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.0.2]
+
+- Fix silent connection hang when request endtime extends past the indexed time range.
+- Fix wildcard time queries returning no data due to invalid SQLite date literals.
+- Always send an HTTP response when no data matches, even on unexpected empty extraction.
+
 ## [2.0.1]
 
 - Fix python 3.9 compatibility and versioning in path

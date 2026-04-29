@@ -305,6 +305,13 @@ class HTTPServer_RequestHandler(SimpleHTTPRequestHandler):
             self.return_error(500, str(err))
             return
 
+        # Safety net: if the extractor yielded no bytes without raising,
+        # send an explicit nodata response rather than closing the connection
+        # with no HTTP status, which would hang the client.
+        if total_bytes == 0:
+            self.return_error(int(request.bulk_params["nodata"]), "No data matched selection")
+            return
+
         duration = time.time() - request_time
 
         if self.server.params["shiplogdir"]:
@@ -394,11 +401,11 @@ class HTTPServer_RequestHandler(SimpleHTTPRequestHandler):
                     wildcards = False
                 else:
                     cur.execute(
-                        f"UPDATE {request_table} SET starttime='0000-00-00T00:00:00' "
+                        f"UPDATE {request_table} SET starttime='1900-01-01T00:00:00' "
                         "WHERE starttime='*'"
                     )
                     cur.execute(
-                        f"UPDATE {request_table} SET endtime='5000-00-00T00:00:00' "
+                        f"UPDATE {request_table} SET endtime='2100-01-01T00:00:00' "
                         "WHERE endtime='*'"
                     )
 

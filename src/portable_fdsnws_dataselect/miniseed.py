@@ -251,11 +251,13 @@ class MiniseedDataExtractor:
                 s_index = 0
             e_index = bisect.bisect_right(times_ns, etime)
             if e_index >= len(times_ns):
-                e_index = -1
+                end_offset = block_end
+            else:
+                end_offset = offsets[e_index]
 
             return (
                 _TrimBound(offsets[s_index], stime > row_stime),
-                _TrimBound(offsets[e_index], etime < row_etime),
+                _TrimBound(end_offset, etime < row_etime),
             )
         else:
             return (
