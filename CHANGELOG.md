@@ -5,6 +5,7 @@
 - Fix silent connection hang when request endtime extends past the indexed time range.
 - Fix wildcard time queries returning no data due to invalid SQLite date literals.
 - Always send an HTTP response when no data matches, even on unexpected empty extraction.
+- Add integration and unit tests.
 
 ## [2.0.1]
 

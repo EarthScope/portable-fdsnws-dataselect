@@ -45,7 +45,7 @@ DEFAULT_PARAMS: dict[str, str] = {
 REQUIRED_PARAMS = ("starttime", "endtime")
 
 #: Valid endpoint names
-QUERY_ENDPOINTS = ("query", "queryauth", "summary", "version", "application.wadl")
+QUERY_ENDPOINTS = ("query", "summary", "version", "application.wadl")
 
 # Pre-compiled patterns for selection line validation
 _ID_RE = re.compile(r"^[-0-9a-zA-Z,?*]+$")
@@ -105,7 +105,7 @@ class DataselectRequest:
         self.path = req.path.lower()
         self.endpoint = self.get_path_endpoint(self.path)
         logger.debug(f"Request endpoint: {self.endpoint}")
-        if self.endpoint in ("query", "queryauth", "summary"):
+        if self.endpoint in ("query", "summary"):
             if not body:
                 body = self.parse_query(req.query)
                 logger.debug(f"GET request translated to request body:\n{body}")

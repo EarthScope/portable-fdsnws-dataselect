@@ -5,7 +5,6 @@ Server startup, configuration parsing, and thread pool.
 from __future__ import annotations
 
 import argparse
-import base64
 import logging.config
 import os
 import socket
@@ -112,7 +111,6 @@ def run_server(params: dict) -> None:
                 # No host specified — use IPv6 dual-stack to accept both IPv4 and IPv6
                 self.address_family = socket.AF_INET6
             super().__init__(address, handler_class)
-            self.key: str = ""
 
         def server_bind(self) -> None:
             if self.address_family == socket.AF_INET6:
@@ -123,19 +121,8 @@ def run_server(params: dict) -> None:
                     pass
             super().server_bind()
 
-        def set_auth(self, username: str, password: str) -> None:
-            self.key = base64.b64encode(
-                f"{username}:{password}".encode()
-            ).decode("ascii")
-
-        def get_auth_key(self) -> str:
-            return self.key
-
     server = ThreadedServer((params["interface"], params["port"]), HTTPServer_RequestHandler)
     server.params = params
-
-    if params.get("username") and params.get("password"):
-        server.set_auth(params["username"], params["password"])
 
     msg = f"Started dataselect server ({__version__}) @ http://{server.server_name}:{server.server_port}"
     logger.warning(msg)
@@ -370,11 +357,14 @@ def main() -> None:
     params["interface"] = config.get("server", "interface", fallback="")
     params["port"] = _get_int(config, "server", "port", 80, min_val=1, max_exclusive=True)
     params["request_limit"] = _get_int(config, "server", "request_limit", 0, min_val=0)
-    params["username"] = config.get("server", "username", fallback=None)
-    params["password"] = config.get("server", "password", fallback=None)
 
-    if bool(params["username"]) != bool(params["password"]):
-        _config_exit("Username and password must be specified together, exiting")
+    for legacy in ("username", "password"):
+        if config.has_option("server", legacy):
+            _config_exit(
+                f"Config server:{legacy} is no longer supported. "
+                "Authentication / restricted-data access is not implemented in this server. "
+                "Remove this option from your configuration."
+            )
 
     params["maxsectiondays"] = _get_int(config, "server", "maxsectiondays", 10, min_val=1, max_exclusive=True)
     raw_docroot = config.get("server", "docroot", fallback="")

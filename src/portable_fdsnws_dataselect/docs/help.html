@@ -119,21 +119,7 @@ TA A25A -- BHE 2010-03-25T00:00:00 2010-04-01T00:00:00</pre>
 
     <h2 id="restricteddata">Accessing restricted data</h2>
 
-    Restricted access is not implemented in this server.
-    <!--
-    <p>Requesting restricted data via this web service requires authentication.  The authentication is done using a standard <span class="caps">HTTP</span> mechanism called <a href="https://en.wikipedia.org/wiki/Digest_access_authentication">digest access authentication</a>, using a 2-way handshake.  To submit a request with authentication credentials you would use the <code>queryauth</code> method of the service in place of the <code>query</code> method.  You must use a client that supports digest authentication, luckily such support is common.
-   </p>
-
-    <p>For example, submitting a request and subsequently initiating the authentication handshake would be done by requesting this <span class="caps">URL</span>:</p>
-
-    <pre>http://server.local:port/fdsnws/dataselect/1/queryauth?net=IU&amp;sta=ANMO&amp;loc=00&amp;cha=BHZ&amp;start=2010-02-27T06:30:00&amp;end=2010-02-27T10:30:00</pre>
-
-    <p>This request could be submitted, along with authentication credentials, using a command line tool like <a href="http://curl.haxx.se/">curl</a>:</p>
-
-    <pre>$ curl -L --digest --user EMAIL:PASSWORD -o data.mseed &#39;http://server.local:port/fdsnws/dataselect/1/queryauth?net=IU&amp;sta=ANMO&amp;loc=0Z&amp;start=2010-02-27T06:30:00&amp;end=2010-02-27T10:30:00&#39;</pre>
-
-    <p>where you replace <code>EMAIL</code> and <code>PASSWORD</code> with your own credentials.  If you are submitting this request from the command line, then for security purposes, you may consider not including <code>PASSWORD</code> in your request, as it is an optional parameter.  If only <code>EMAIL</code> is specified, then curl will prompt you for your password when the request is submitted.</p>
-  -->
+    <p>Restricted access is not implemented in this server.</p>
 
     <h2 id="considerations">Considerations</h2>
 

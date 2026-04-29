@@ -70,8 +70,6 @@ def _make_server(db_path: Path, *, has_summary: bool = True) -> _TestHTTPServer:
         "interface": "127.0.0.1",
         "port": 0,
         "request_limit": 0,
-        "username": None,
-        "password": None,
         "maxsectiondays": 10,
         "docroot": "",
         "show_directories": False,

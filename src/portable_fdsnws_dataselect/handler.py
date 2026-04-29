@@ -146,13 +146,6 @@ class HTTPServer_RequestHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-type", "text/html")
         self.end_headers()
 
-    def do_AUTHHEAD(self) -> None:
-        """Send response code and header requesting HTTP Basic authentication."""
-        self.send_response(401)
-        self.send_header("WWW-Authenticate", 'basic realm="FDSNWS"')
-        self.send_header("Content-type", "text/html")
-        self.end_headers()
-
     def return_error(self, code: int, err_msg: str) -> None:
         """Log *err_msg* and write an FDSN-style plain-text error response."""
         msg = (
@@ -253,9 +246,6 @@ class HTTPServer_RequestHandler(SimpleHTTPRequestHandler):
                     f"{row.earliest:<32s}{row.latest:<32s}{row.updated:<32s}\n"
                 )
                 self.wfile.write(line.encode())
-            return
-        elif request.endpoint == "queryauth":
-            self.return_error(403, "Authorization via the 'queryauth' endpoint not implemented")
             return
 
         request_time = time.time()

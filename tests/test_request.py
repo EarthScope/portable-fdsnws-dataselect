@@ -110,11 +110,13 @@ def test_endpoint_summary_no_times():
     assert len(r.query_rows) == 1
 
 
-def test_endpoint_queryauth_with_times():
-    r = DataselectRequest(
-        f"/fdsnws/dataselect/{V}/queryauth?net=IU&start=2017-01-01&end=2017-01-02"
-    )
-    assert r.endpoint == "queryauth"
+def test_endpoint_queryauth_not_supported():
+    """The queryauth endpoint has been removed; it must no longer route as a
+    query endpoint."""
+    with pytest.raises(NonQueryURLError):
+        DataselectRequest(
+            f"/fdsnws/dataselect/{V}/queryauth?net=IU&start=2017-01-01&end=2017-01-02"
+        )
 
 
 def test_endpoint_unknown_tail():
