@@ -431,8 +431,11 @@ def main() -> None:
         logger.critical(msg)
         logger.critical("Configuration error, exiting.")
         sys.exit(1)
-    except Exception:
+    except Exception as err:
         logger.exception("Unexpected error verifying configuration")
+        print(f"Unexpected error verifying configuration: {err}")
+        print("Configuration error, exiting.")
+        sys.exit(1)
 
     try:
         run_server(params)
