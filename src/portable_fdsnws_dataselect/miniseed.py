@@ -191,6 +191,42 @@ class _RequestRow:
     samplerate: float
 
 
+def _parse_timeindex(
+    raw: Optional[str], row_etime: int
+) -> tuple[Optional[list[int]], Optional[list[int]]]:
+    """
+    Parse a ``timeindex`` field into parallel ns-time and byte-offset lists.
+
+    The ``timeindex`` column is allowed to be NULL by the schema and may be
+    malformed for old or hand-built indexes.  Returns ``(None, None)`` if the
+    value cannot be parsed; callers should fall back to a full-block trim.
+
+    :param raw: The ``timeindex`` field value (may be ``None``).
+    :param row_etime: Row endtime in ns; used to resolve the ``latest`` token.
+    """
+    if not raw:
+        return None, None
+
+    try:
+        times_ns: list[int] = []
+        offsets: list[int] = []
+        for entry in raw.split(","):
+            time_str, _, offset_str = entry.partition("=>")
+            if not offset_str:
+                return None, None
+            if time_str == "latest":
+                times_ns.append(row_etime)
+            else:
+                times_ns.append(int(float(time_str) * NSTMODULUS))
+            offsets.append(int(offset_str))
+    except (ValueError, AttributeError):
+        return None, None
+
+    if not times_ns:
+        return None, None
+    return times_ns, offsets
+
+
 class MiniseedDataExtractor:
     """Extract, trim, and validate miniSEED data segments."""
 
@@ -233,18 +269,19 @@ class MiniseedDataExtractor:
         block_end = block_start + int(NRow.bytes)
 
         if stime > row_stime or etime < row_etime:
-            entries = [x.split("=>") for x in NRow.timeindex.split(",")]
-
-            # Parse timeindex into parallel ns-time and byte-offset lists.
-            # The timeindex stores epoch-second strings; convert to nanoseconds.
-            times_ns: list[int] = []
-            offsets: list[int] = []
-            for entry in entries:
-                if entry[0] == "latest":
-                    times_ns.append(row_etime)
-                else:
-                    times_ns.append(int(float(entry[0]) * NSTMODULUS))
-                offsets.append(int(entry[1]))
+            # Try to use timeindex to narrow the byte range. If it is missing
+            # (NULL is allowed by the schema) or malformed, fall back to
+            # trimming over the full block at the record level.
+            times_ns, offsets = _parse_timeindex(NRow.timeindex, row_etime)
+            if times_ns is None:
+                logger.warning(
+                    "timeindex missing or malformed for "
+                    f"{NRow.filename}@{block_start}; trimming full block"
+                )
+                return (
+                    _TrimBound(block_start, stime > row_stime),
+                    _TrimBound(block_end, etime < row_etime),
+                )
 
             s_index = bisect.bisect_left(times_ns, stime) - 1
             if s_index < 0:
@@ -327,23 +364,28 @@ class MiniseedDataExtractor:
             )
 
             if NRow.start.needs_trim or NRow.end.needs_trim:
-                # Iterate record-by-record through the trimmed section
-                for msri in MSR_iterator(
+                # Iterate record-by-record through the trimmed section.
+                # Use the iterator as a context manager so the underlying file
+                # descriptor is released deterministically — even if the
+                # consumer of this generator stops early or an exception is
+                # raised mid-iteration.
+                with MSR_iterator(
                     filename=NRow.filename,
                     startoffset=NRow.start.offset,
                     dataflag=False,
-                ):
-                    offset = msri.get_offset()
+                ) as msri_iter:
+                    for msri in msri_iter:
+                        offset = msri.get_offset()
 
-                    if offset >= NRow.end.offset:
-                        break
+                        if offset >= NRow.end.offset:
+                            break
 
-                    yield MSRIDataSegment(
-                        msri, NRow.samplerate, NRow.starttime, NRow.endtime, NRow.srcname
-                    )
+                        yield MSRIDataSegment(
+                            msri, NRow.samplerate, NRow.starttime, NRow.endtime, NRow.srcname
+                        )
 
-                    if (offset + msri.msr.reclen) >= NRow.end.offset:
-                        break
+                        if (offset + msri.msr.reclen) >= NRow.end.offset:
+                            break
             else:
                 yield FileDataSegment(
                     NRow.filename, NRow.start.offset, NRow.bytes, NRow.srcname

@@ -289,3 +289,157 @@ def test_redirect_from_root(live_server):
         assert resp.getheader("Location") == f"{PREFIX}/"
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Path-traversal / static-file serving
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_static_path_traversal_rejected(live_server):
+    """Encoded ``..`` segments in the static path must not escape docroot."""
+    port = int(live_server.rsplit(":", 1)[-1])
+    # Use a raw connection so urllib doesn't normalize the URL for us.
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        for path in (
+            f"{PREFIX}/../../../../etc/passwd",
+            f"{PREFIX}/%2E%2E/%2E%2E/%2E%2E/etc/passwd",
+            f"{PREFIX}/foo/../../../etc/passwd",
+        ):
+            conn.request("GET", path)
+            resp = conn.getresponse()
+            body = resp.read()
+            assert resp.status == 404, (
+                f"Path {path!r} returned {resp.status}; body={body[:200]!r}"
+            )
+    finally:
+        conn.close()
+
+
+@pytest.mark.integration
+def test_static_absolute_path_rejected(live_server):
+    """Absolute path components must not be honored as filesystem paths."""
+    port = int(live_server.rsplit(":", 1)[-1])
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.request("GET", f"{PREFIX}//etc/passwd")
+        resp = conn.getresponse()
+        resp.read()
+        assert resp.status == 404
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# POST Content-Length handling
+# ---------------------------------------------------------------------------
+
+def _raw_request(port: int, raw: bytes) -> tuple[int, bytes]:
+    """Send a raw HTTP request and return ``(status_code, body)``.
+
+    Uses a low-level socket so we can construct malformed headers (e.g.
+    omit Content-Length on a POST) that http.client refuses to send.
+    """
+    import socket as _socket
+
+    sock = _socket.create_connection(("127.0.0.1", port), timeout=5)
+    try:
+        sock.sendall(raw)
+        chunks: list[bytes] = []
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    finally:
+        sock.close()
+    response = b"".join(chunks)
+    head, _, body = response.partition(b"\r\n\r\n")
+    status_line = head.split(b"\r\n", 1)[0]
+    status = int(status_line.split(b" ")[1])
+    return status, body
+
+
+@pytest.mark.integration
+def test_post_missing_content_length_returns_411(live_server):
+    port = int(live_server.rsplit(":", 1)[-1])
+    raw = (
+        f"POST {PREFIX}/query HTTP/1.0\r\n"
+        "Host: 127.0.0.1\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+    ).encode()
+    status, _ = _raw_request(port, raw)
+    assert status == 411
+
+
+@pytest.mark.integration
+def test_post_invalid_content_length_returns_400(live_server):
+    port = int(live_server.rsplit(":", 1)[-1])
+    raw = (
+        f"POST {PREFIX}/query HTTP/1.0\r\n"
+        "Host: 127.0.0.1\r\n"
+        "Content-Length: not-a-number\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+    ).encode()
+    status, _ = _raw_request(port, raw)
+    assert status == 400
+
+
+@pytest.mark.integration
+def test_post_oversized_content_length_returns_413(live_server):
+    port = int(live_server.rsplit(":", 1)[-1])
+    # 100 GiB; well over the 10 MiB cap
+    raw = (
+        f"POST {PREFIX}/query HTTP/1.0\r\n"
+        "Host: 127.0.0.1\r\n"
+        "Content-Length: 107374182400\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+    ).encode()
+    status, body = _raw_request(port, raw)
+    assert status == 413, body[:200]
+
+
+# ---------------------------------------------------------------------------
+# Quality filter
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_quality_b_returns_data(live_server):
+    """quality=B (best, the default) must not be silently dropped."""
+    url = (
+        f"{live_server}{PREFIX}/query"
+        f"?net={NET}&sta={STA}&loc={LOC}&cha=LHZ"
+        f"&start={WIN_START}&end={WIN_END}&quality=B"
+    )
+    resp = _get(url)
+    assert resp.getcode() == 200
+    assert len(resp.read()) > 0
+
+
+@pytest.mark.integration
+def test_quality_m_returns_data(live_server):
+    """quality=M (merged) is treated as 'any quality'; data must be returned."""
+    url = (
+        f"{live_server}{PREFIX}/query"
+        f"?net={NET}&sta={STA}&loc={LOC}&cha=LHZ"
+        f"&start={WIN_START}&end={WIN_END}&quality=M"
+    )
+    resp = _get(url)
+    assert resp.getcode() == 200
+    assert len(resp.read()) > 0
+
+
+@pytest.mark.integration
+def test_quality_invalid_returns_400(live_server):
+    url = (
+        f"{live_server}{PREFIX}/query"
+        f"?net={NET}&sta={STA}&loc={LOC}&cha=LHZ"
+        f"&start={WIN_START}&end={WIN_END}&quality=Z"
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        _get(url)
+    assert exc_info.value.code == 400

@@ -46,6 +46,7 @@ def _row(timeindex: str = TIMEINDEX_2) -> SimpleNamespace:
         byteoffset=BLOCK_START,
         bytes=18432,
         timeindex=timeindex,
+        filename="<test fixture>",
     )
 
 
@@ -138,3 +139,34 @@ def test_latest_sentinel_resolves_to_row_etime(extractor):
     # bisect_right([T1, T2, T3], T3) == 3 == len → block_end
     assert end.offset == BLOCK_END
     assert not end.needs_trim   # etime == row_etime → not strictly less
+
+
+# ---------------------------------------------------------------------------
+# Malformed / missing timeindex → fall back to full-block record-level trim
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "bad_timeindex",
+    [
+        None,                          # NULL is allowed by the schema
+        "",                            # empty string
+        "garbage",                     # no '=>' separator
+        "1267253400.069539",           # missing offset half
+        "=>36352",                     # missing time half
+        "not-a-number=>36352",         # unparseable time
+        "1267253400.069539=>not-num",  # unparseable offset
+    ],
+)
+def test_handle_trimming_malformed_timeindex_does_not_crash(extractor, bad_timeindex):
+    """A NULL/malformed timeindex must not raise; instead the full block
+    is returned with needs_trim flags so record-level trimming can still
+    honor the request window."""
+    stime = NS_T2                          # > row_stime → forces sub-block branch
+    etime = NS_T3 - 3600 * NSTMODULUS    # < row_etime → also forces it
+
+    start, end = extractor.handle_trimming(stime, etime, _row(bad_timeindex))
+
+    assert start.offset == BLOCK_START
+    assert end.offset == BLOCK_END
+    assert start.needs_trim
+    assert end.needs_trim

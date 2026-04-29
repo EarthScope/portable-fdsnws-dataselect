@@ -12,7 +12,7 @@ import uuid
 from http.server import SimpleHTTPRequestHandler
 from logging import getLogger, DEBUG
 from typing import Iterator, NamedTuple, Optional
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from pymseed import NSTMODULUS, nstime2timestr
 
@@ -27,14 +27,18 @@ HTTP_MSGS: dict[int, str] = {
     200: "Successful request, results follow",
     204: "Request was properly formatted and submitted but no data matches the selection",
     400: "Bad request",
-    401: "Unauthorized, authentication required",
-    403: "Authentication failed or access blocked to restricted data",
     404: "Request was properly formatted and submitted but no data matches the selection",
+    411: "Length required",
     413: "Request would result in too much data being returned or the request itself is too large",
     414: "Request URI too large",
     500: "Internal server error",
     503: "Service temporarily unavailable",
 }
+
+# Hard upper bound on POST request body size (bytes).
+# FDSN selection bodies are typically a few KB; 10 MiB leaves ample headroom
+# while preventing a malicious or buggy client from declaring a huge length.
+MAX_POST_BODY_BYTES = 10 * 1024 * 1024
 
 
 class IndexRow(NamedTuple):
@@ -136,7 +140,7 @@ def _resolve_summary_table(cur: sqlite3.Cursor) -> str:
 
 class HTTPServer_RequestHandler(SimpleHTTPRequestHandler):
 
-    prefix = f"/fdsnws/dataselect/1/"
+    prefix = "/fdsnws/dataselect/1/"
 
     # -- simple response helpers -----------------------------------------------
 
@@ -210,7 +214,38 @@ class HTTPServer_RequestHandler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         """Handle a POST request."""
         logger.debug(f"POST: {self.path}")
-        request_text = self.rfile.read(int(self.headers["Content-Length"])).decode()
+
+        raw_len = self.headers.get("Content-Length")
+        if raw_len is None:
+            self.return_error(411, "Content-Length header is required for POST")
+            return
+        try:
+            content_length = int(raw_len)
+        except ValueError:
+            self.return_error(400, f"Invalid Content-Length: {raw_len!r}")
+            return
+        if content_length < 0:
+            self.return_error(400, f"Negative Content-Length: {content_length}")
+            return
+        if content_length > MAX_POST_BODY_BYTES:
+            self.return_error(
+                413,
+                f"Request body of {content_length} bytes exceeds limit "
+                f"of {MAX_POST_BODY_BYTES} bytes",
+            )
+            return
+
+        try:
+            body = self.rfile.read(content_length)
+        except OSError as err:
+            logger.warning(f"POST body read error: {err}")
+            return
+        try:
+            request_text = body.decode("utf-8")
+        except UnicodeDecodeError:
+            self.return_error(400, "Request body is not valid UTF-8")
+            return
+
         logger.debug(f"POST query:\n{request_text}")
         try:
             request = DataselectRequest(self.path, request_text)
@@ -418,11 +453,20 @@ class HTTPServer_RequestHandler(SimpleHTTPRequestHandler):
                 "  AND ts.endtime >= r.starttime"
             )
 
-            if bulk_params.get("quality") in ("D", "R", "Q"):
-                sql += f" AND quality = '{bulk_params['quality']}'"
+            # Quality filter. Per the FDSN spec, "B" (best) and "M" (merged)
+            # mean "any quality" — no filter is applied. Only the literal
+            # data-quality codes D/R/Q narrow the result set. The whitelist
+            # check is duplicated here for safety; the value is also bound as
+            # a parameter rather than interpolated to avoid relying on the
+            # whitelist invariant for SQL safety.
+            quality = bulk_params.get("quality")
+            sql_params: tuple = ()
+            if quality in ("D", "R", "Q"):
+                sql += " AND quality = ?"
+                sql_params = (quality,)
 
             try:
-                cur.execute(sql)
+                cur.execute(sql, sql_params)
             except Exception as err:
                 logger.exception("Error executing index query")
                 raise ValueError(str(err)) from err
@@ -576,13 +620,51 @@ class HTTPServer_RequestHandler(SimpleHTTPRequestHandler):
         """
         Map a URL path to a filesystem path for static file serving.
 
-        Strips the service prefix and resolves relative to the configured docroot.
+        Strips the service prefix, URL-decodes, drops query/fragment, and
+        rejects any component that would escape *docroot* (``..``, absolute
+        components, drive letters). The final path is also verified, after
+        symlink resolution, to be contained within *docroot*.
         """
         docroot = self.server.params["docroot"] or os.path.join(
             os.path.dirname(pkg_path), "docs"
         )
-        relative_parts = self.path[len(self.prefix) :].split("/")
-        return os.path.join(docroot, *relative_parts)
+
+        # Strip query/fragment and the service prefix, then URL-decode.
+        request_path = urlparse(path).path
+        suffix = (
+            request_path[len(self.prefix):]
+            if request_path.startswith(self.prefix)
+            else request_path.lstrip("/")
+        )
+        suffix = unquote(suffix)
+
+        # Reject any component that could escape docroot. Splitting on both
+        # "/" and the OS separator catches encoded "\" on Windows.
+        safe_parts: list[str] = []
+        for raw in suffix.replace("\\", "/").split("/"):
+            if raw in ("", ".", ".."):
+                if raw == "..":
+                    return os.path.join(docroot, "__not_found__")
+                continue
+            # Drop absolute components (e.g. "/etc/passwd" → "etc/passwd"
+            # already, but be defensive against drive-letter components on
+            # Windows like "C:foo").
+            if os.path.isabs(raw) or (len(raw) >= 2 and raw[1] == ":"):
+                return os.path.join(docroot, "__not_found__")
+            safe_parts.append(raw)
+
+        candidate = os.path.normpath(os.path.join(docroot, *safe_parts))
+
+        # Belt-and-braces: verify containment after symlink resolution.
+        docroot_real = os.path.realpath(docroot)
+        candidate_real = os.path.realpath(candidate)
+        if (
+            candidate_real != docroot_real
+            and not candidate_real.startswith(docroot_real + os.sep)
+        ):
+            return os.path.join(docroot, "__not_found__")
+
+        return candidate
 
     def list_directory(self, path: str):
         """
