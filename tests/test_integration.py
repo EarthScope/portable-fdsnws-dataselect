@@ -443,3 +443,52 @@ def test_quality_invalid_returns_400(live_server):
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         _get(url)
     assert exc_info.value.code == 400
+
+
+# ---------------------------------------------------------------------------
+# HEAD method
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+@pytest.mark.parametrize("endpoint", ["query", "summary", "version", "application.wadl"])
+def test_head_on_query_endpoints_returns_405(live_server, endpoint):
+    """HEAD against any service endpoint must return 405 with Allow: GET, POST,
+    not a misleading 200."""
+    port = int(live_server.rsplit(":", 1)[-1])
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.request("HEAD", f"{PREFIX}/{endpoint}")
+        resp = conn.getresponse()
+        resp.read()
+        assert resp.status == 405
+        assert resp.getheader("Allow") == "GET, POST"
+    finally:
+        conn.close()
+
+
+@pytest.mark.integration
+def test_head_on_static_file_returns_200(live_server):
+    """HEAD against the bundled documentation must report the real status."""
+    port = int(live_server.rsplit(":", 1)[-1])
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.request("HEAD", f"{PREFIX}/")
+        resp = conn.getresponse()
+        resp.read()
+        assert resp.status == 200
+    finally:
+        conn.close()
+
+
+@pytest.mark.integration
+def test_head_on_missing_static_returns_404(live_server):
+    """HEAD against a non-existent static path must report 404, not 200."""
+    port = int(live_server.rsplit(":", 1)[-1])
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.request("HEAD", f"{PREFIX}/this-file-does-not-exist.html")
+        resp = conn.getresponse()
+        resp.read()
+        assert resp.status == 404
+    finally:
+        conn.close()

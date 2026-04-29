@@ -50,8 +50,11 @@ class ExtractedDataSegment(ABC):
 def trim_record(msr: MS3Record, earliest: int, latest: int) -> Optional[bytes]:
     """Trim a miniSEED record to the specified time window.
 
-    If the record samples could not be decompressed or could not be
-    trimmed, the original record is returned.
+    If the record samples could not be decompressed, the original (untrimmed)
+    record is returned. This is the FDSN-spec-allowed behavior — responses
+    are required to *cover* the requested window, not to be exactly
+    bounded — but it is logged so operators can see when bytes outside the
+    requested window are being shipped.
 
     :param msr: Parsed MS3Record (data need not be unpacked yet).
     :param earliest: Earliest time to retain, nanoseconds since Unix epoch.
@@ -64,7 +67,11 @@ def trim_record(msr: MS3Record, earliest: int, latest: int) -> Optional[bytes]:
 
     try:
         msr.unpack_data()
-    except Exception:
+    except Exception as err:
+        logger.warning(
+            f"Could not unpack samples for record at "
+            f"{msr.starttime}; returning untrimmed record ({err})"
+        )
         return msr.record
 
     starttime = msr.starttime
@@ -104,7 +111,13 @@ def trim_record(msr: MS3Record, earliest: int, latest: int) -> Optional[bytes]:
     ):
         repacked.extend(record)
 
-    return bytes(repacked) if repacked else msr.record
+    if not repacked:
+        logger.warning(
+            f"Repack produced no records for {msr.starttime}; "
+            "returning untrimmed record"
+        )
+        return msr.record
+    return bytes(repacked)
 
 
 class MSRIDataSegment(ExtractedDataSegment):

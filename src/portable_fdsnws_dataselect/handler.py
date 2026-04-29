@@ -18,7 +18,12 @@ from pymseed import NSTMODULUS, nstime2timestr
 
 from portable_fdsnws_dataselect import pkg_path, version, __version__
 from portable_fdsnws_dataselect.miniseed import NoDataError, RequestLimitExceededError
-from portable_fdsnws_dataselect.request import DataselectRequest, NonQueryURLError, QueryError
+from portable_fdsnws_dataselect.request import (
+    QUERY_ENDPOINTS,
+    DataselectRequest,
+    NonQueryURLError,
+    QueryError,
+)
 
 logger = getLogger(__name__)
 
@@ -28,6 +33,7 @@ HTTP_MSGS: dict[int, str] = {
     204: "Request was properly formatted and submitted but no data matches the selection",
     400: "Bad request",
     404: "Request was properly formatted and submitted but no data matches the selection",
+    405: "Method not allowed",
     411: "Length required",
     413: "Request would result in too much data being returned or the request itself is too large",
     414: "Request URI too large",
@@ -79,23 +85,32 @@ class SummaryRow(NamedTuple):
     updated: str
 
 
+_REQUEST_TABLE_FULL_COLS = (
+    "network TEXT, station TEXT, location TEXT, channel TEXT, "
+    "starttime TEXT, endtime TEXT"
+)
+_REQUEST_TABLE_NSLC_COLS = (
+    "network TEXT, station TEXT, location TEXT, channel TEXT"
+)
+
+
 @contextlib.contextmanager
-def _db_request_table(
+def _open_request_db(
     dbfile: str,
     query_rows: list[list[str]],
-    columns: str,
-    insert_cols: str,
-    placeholders: str,
-    row_slice: slice = slice(None),
-) -> Iterator[tuple[sqlite3.Cursor, str, str]]:
+    *,
+    nslc_only: bool = False,
+) -> Iterator[tuple[sqlite3.Cursor, str]]:
     """
-    Context manager that opens *dbfile*, creates a temporary request table,
-    inserts *query_rows*, and yields ``(cursor, request_table, summary_table)``.
+    Open *dbfile* and create a uniquely-named TEMPORARY table populated with
+    the network/station/location/channel (and, by default, starttime/endtime)
+    fields from *query_rows*.
 
-    The connection is always closed on exit regardless of exceptions.
+    Yields ``(cursor, request_table_name)``. The connection is closed on
+    exit; the temp table is dropped on success.
 
-    The `--` location code used in FDSN requests is normalised to `""` (empty)
-    before insertion, matching the index database convention.
+    The FDSN ``--`` location-code convention is normalised to ``""`` (the
+    convention used in the index database) before insertion.
     """
     try:
         conn = sqlite3.connect(dbfile, 10.0)
@@ -106,36 +121,47 @@ def _db_request_table(
     try:
         cur = conn.cursor()
         cur.execute("PRAGMA temp_store=MEMORY")
-        cur.execute(f"CREATE TEMPORARY TABLE {request_table} ({columns})")
+
+        if nslc_only:
+            cur.execute(
+                f"CREATE TEMPORARY TABLE {request_table} ({_REQUEST_TABLE_NSLC_COLS})"
+            )
+            insert_sql = (
+                f"INSERT INTO {request_table} "
+                "(network,station,location,channel) VALUES (?,?,?,?)"
+            )
+            row_slice: slice = slice(0, 4)
+        else:
+            cur.execute(
+                f"CREATE TEMPORARY TABLE {request_table} ({_REQUEST_TABLE_FULL_COLS})"
+            )
+            insert_sql = (
+                f"INSERT INTO {request_table} "
+                "(network,station,location,channel,starttime,endtime) "
+                "VALUES (?,?,?,?,?,?)"
+            )
+            row_slice = slice(None)
 
         for req in query_rows:
             row = list(req[row_slice])
-            if len(row) > 2 and row[2] == "--":
+            if row[2] == "--":
                 row[2] = ""
-            cur.execute(
-                f"INSERT INTO {request_table} ({insert_cols}) VALUES ({placeholders})",
-                row,
-            )
+            cur.execute(insert_sql, row)
 
-        # Determine summary table name from the cursor's connection
-        # (server params are not accessible here; resolved by caller convention)
-        summary_table = _resolve_summary_table(cur)
-
-        yield cur, request_table, summary_table
+        yield cur, request_table
 
         cur.execute(f"DROP TABLE IF EXISTS {request_table}")
-    except ValueError:
-        raise
-    except Exception as err:
-        logger.exception("Database error")
-        raise ValueError(str(err)) from err
     finally:
         conn.close()
 
 
-def _resolve_summary_table(cur: sqlite3.Cursor) -> str:
-    """Return an empty string sentinel; callers resolve the name themselves."""
-    return ""
+def _summary_table_exists(cur: sqlite3.Cursor, summary_table: str) -> bool:
+    """Return True if a table with name *summary_table* exists."""
+    cur.execute(
+        "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?",
+        (summary_table,),
+    )
+    return bool(cur.fetchone()[0])
 
 
 class HTTPServer_RequestHandler(SimpleHTTPRequestHandler):
@@ -145,10 +171,28 @@ class HTTPServer_RequestHandler(SimpleHTTPRequestHandler):
     # -- simple response helpers -----------------------------------------------
 
     def do_HEAD(self) -> None:
-        """Send response code and header for a normal successful response."""
-        self.send_response(200)
-        self.send_header("Content-type", "text/html")
-        self.end_headers()
+        """
+        Handle a HEAD request.
+
+        The FDSN dataselect query endpoints support GET and POST only;
+        respond with 405 + ``Allow: GET, POST`` for HEAD against any
+        recognised service endpoint. For other paths (static documentation,
+        unknown URLs) defer to the parent class so the response status
+        reflects what a GET would return.
+        """
+        request_path = urlparse(self.path).path.lower()
+        endpoint_path = (
+            request_path[len(self.prefix):]
+            if request_path.startswith(self.prefix)
+            else ""
+        )
+        if endpoint_path in QUERY_ENDPOINTS:
+            self.send_response(405)
+            self.send_header("Allow", "GET, POST")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        super().do_HEAD()
 
     def return_error(self, code: int, err_msg: str) -> None:
         """Log *err_msg* and write an FDSN-style plain-text error response."""
@@ -382,107 +426,69 @@ class HTTPServer_RequestHandler(SimpleHTTPRequestHandler):
         summary_table = self._summary_table_name()
         index_table = self.server.params["index_table"]
         days = self.server.params["maxsectiondays"]
-        request_table = f"request_{uuid.uuid4().hex}"
         logger.debug(f"Opening SQLite database for index rows: {dbfile}")
 
         try:
-            conn = sqlite3.connect(dbfile, 10.0)
-        except Exception as err:
-            raise ValueError(str(err)) from err
+            with _open_request_db(dbfile, query_rows) as (cur, request_table):
+                summary_present = _summary_table_exists(cur, summary_table)
 
-        try:
-            cur = conn.cursor()
-            cur.execute("PRAGMA temp_store=MEMORY")
-
-            cur.execute(
-                f"CREATE TEMPORARY TABLE {request_table} "
-                "(network TEXT, station TEXT, location TEXT, channel TEXT, "
-                "starttime TEXT, endtime TEXT)"
-            )
-            for req in query_rows:
-                row = list(req)
-                if row[2] == "--":
-                    row[2] = ""
-                cur.execute(
-                    f"INSERT INTO {request_table} "
-                    "(network,station,location,channel,starttime,endtime) "
-                    "VALUES (?,?,?,?,?,?)",
-                    row,
+                wildcards = any(
+                    "*" in field or "?" in field for req in query_rows for field in req
                 )
 
-            cur.execute(
-                "SELECT count(*) FROM sqlite_master "
-                f"WHERE type='table' AND name='{summary_table}'"
-            )
-            summary_present = cur.fetchone()[0]
+                if wildcards:
+                    if summary_present:
+                        self.resolve_request(cur, summary_table, request_table)
+                        wildcards = False
+                    else:
+                        cur.execute(
+                            f"UPDATE {request_table} SET starttime='1900-01-01T00:00:00' "
+                            "WHERE starttime='*'"
+                        )
+                        cur.execute(
+                            f"UPDATE {request_table} SET endtime='2100-01-01T00:00:00' "
+                            "WHERE endtime='*'"
+                        )
 
-            wildcards = any(
-                "*" in field or "?" in field for req in query_rows for field in req
-            )
+                op = "GLOB" if wildcards else "="
 
-            if wildcards:
-                if summary_present:
-                    self.resolve_request(cur, summary_table, request_table)
-                    wildcards = False
-                else:
-                    cur.execute(
-                        f"UPDATE {request_table} SET starttime='1900-01-01T00:00:00' "
-                        "WHERE starttime='*'"
-                    )
-                    cur.execute(
-                        f"UPDATE {request_table} SET endtime='2100-01-01T00:00:00' "
-                        "WHERE endtime='*'"
-                    )
+                sql = (
+                    "SELECT DISTINCT ts.network,ts.station,ts.location,ts.channel,ts.quality, "
+                    "ts.starttime,ts.endtime,ts.samplerate, "
+                    "ts.filename,ts.byteoffset,ts.bytes,ts.hash, "
+                    "ts.timeindex,ts.timespans,ts.timerates, "
+                    "ts.format,ts.filemodtime,ts.updated,ts.scanned, r.starttime, r.endtime "
+                    f"FROM {index_table} ts, {request_table} r "
+                    "WHERE "
+                    f"  ts.network {op} r.network "
+                    f"  AND ts.station {op} r.station "
+                    f"  AND ts.location {op} r.location "
+                    f"  AND ts.channel {op} r.channel "
+                    "  AND ts.starttime <= r.endtime "
+                    f"  AND ts.starttime >= datetime(r.starttime,'-{days} days') "
+                    "  AND ts.endtime >= r.starttime"
+                )
 
-            op = "GLOB" if wildcards else "="
+                # Quality filter. Per the FDSN spec, "B" (best) and "M"
+                # (merged) mean "any quality" — no filter is applied. Only
+                # the literal data-quality codes D/R/Q narrow the result set.
+                # The value is bound as a parameter rather than interpolated
+                # so SQL safety does not rely on the whitelist invariant.
+                quality = bulk_params.get("quality")
+                sql_params: tuple = ()
+                if quality in ("D", "R", "Q"):
+                    sql += " AND quality = ?"
+                    sql_params = (quality,)
 
-            sql = (
-                "SELECT DISTINCT ts.network,ts.station,ts.location,ts.channel,ts.quality, "
-                "ts.starttime,ts.endtime,ts.samplerate, "
-                "ts.filename,ts.byteoffset,ts.bytes,ts.hash, "
-                "ts.timeindex,ts.timespans,ts.timerates, "
-                "ts.format,ts.filemodtime,ts.updated,ts.scanned, r.starttime, r.endtime "
-                f"FROM {index_table} ts, {request_table} r "
-                "WHERE "
-                f"  ts.network {op} r.network "
-                f"  AND ts.station {op} r.station "
-                f"  AND ts.location {op} r.location "
-                f"  AND ts.channel {op} r.channel "
-                "  AND ts.starttime <= r.endtime "
-                f"  AND ts.starttime >= datetime(r.starttime,'-{days} days') "
-                "  AND ts.endtime >= r.starttime"
-            )
-
-            # Quality filter. Per the FDSN spec, "B" (best) and "M" (merged)
-            # mean "any quality" — no filter is applied. Only the literal
-            # data-quality codes D/R/Q narrow the result set. The whitelist
-            # check is duplicated here for safety; the value is also bound as
-            # a parameter rather than interpolated to avoid relying on the
-            # whitelist invariant for SQL safety.
-            quality = bulk_params.get("quality")
-            sql_params: tuple = ()
-            if quality in ("D", "R", "Q"):
-                sql += " AND quality = ?"
-                sql_params = (quality,)
-
-            try:
                 cur.execute(sql, sql_params)
-            except Exception as err:
-                logger.exception("Error executing index query")
-                raise ValueError(str(err)) from err
-
-            index_rows = [IndexRow(*row) for row in cur.fetchall()]
-            index_rows.sort()
-            logger.debug(f"Fetched {len(index_rows)} index rows")
-
-            cur.execute(f"DROP TABLE {request_table}")
+                index_rows = [IndexRow(*row) for row in cur.fetchall()]
+                index_rows.sort()
+                logger.debug(f"Fetched {len(index_rows)} index rows")
         except ValueError:
             raise
         except Exception as err:
             logger.exception("Error fetching index rows")
             raise ValueError(str(err)) from err
-        finally:
-            conn.close()
 
         return index_rows
 
@@ -534,66 +540,35 @@ class HTTPServer_RequestHandler(SimpleHTTPRequestHandler):
         """
         dbfile = self.server.params["dbfile"]
         summary_table = self._summary_table_name()
-        request_table = f"request_{uuid.uuid4().hex}"
         logger.debug(f"Opening SQLite database for summary rows: {dbfile}")
-
-        try:
-            conn = sqlite3.connect(dbfile, 10.0)
-        except Exception as err:
-            raise ValueError(str(err)) from err
 
         summary_rows: list[SummaryRow] = []
         try:
-            cur = conn.cursor()
-            cur.execute("PRAGMA temp_store=MEMORY")
+            with _open_request_db(dbfile, query_rows, nslc_only=True) as (
+                cur, request_table
+            ):
+                if not _summary_table_exists(cur, summary_table):
+                    return []
 
-            cur.execute(
-                f"CREATE TEMPORARY TABLE {request_table} "
-                "(network TEXT, station TEXT, location TEXT, channel TEXT)"
-            )
-            for req in query_rows:
-                row = list(req[:4])
-                if row[2] == "--":
-                    row[2] = ""
                 cur.execute(
-                    f"INSERT INTO {request_table} (network,station,location,channel) "
-                    "VALUES (?,?,?,?)",
-                    row,
+                    "SELECT DISTINCT s.network,s.station,s.location,s.channel,"
+                    "s.earliest,s.latest,s.updt "
+                    f"FROM {summary_table} s, {request_table} r "
+                    "WHERE "
+                    "  (r.network='*' OR s.network GLOB r.network) "
+                    "  AND (r.station='*' OR s.station GLOB r.station) "
+                    "  AND (r.location='*' OR s.location GLOB r.location) "
+                    "  AND (r.channel='*' OR s.channel GLOB r.channel)"
                 )
-
-            cur.execute(
-                "SELECT count(*) FROM sqlite_master "
-                f"WHERE type='table' AND name='{summary_table}'"
-            )
-            summary_present = cur.fetchone()[0]
-
-            if summary_present:
-                try:
-                    cur.execute(
-                        "SELECT DISTINCT s.network,s.station,s.location,s.channel,"
-                        "s.earliest,s.latest,s.updt "
-                        f"FROM {summary_table} s, {request_table} r "
-                        "WHERE "
-                        "  (r.network='*' OR s.network GLOB r.network) "
-                        "  AND (r.station='*' OR s.station GLOB r.station) "
-                        "  AND (r.location='*' OR s.location GLOB r.location) "
-                        "  AND (r.channel='*' OR s.channel GLOB r.channel)"
-                    )
-                except Exception as err:
-                    raise ValueError(str(err)) from err
 
                 summary_rows = [SummaryRow(*row) for row in cur.fetchall()]
                 summary_rows.sort()
                 logger.debug(f"Fetched {len(summary_rows)} summary rows")
-
-            cur.execute(f"DROP TABLE {request_table}")
         except ValueError:
             raise
         except Exception as err:
             logger.exception("Error fetching summary rows")
             raise ValueError(str(err)) from err
-        finally:
-            conn.close()
 
         return summary_rows
 

@@ -8,7 +8,11 @@ from configparser import ConfigParser
 
 import pytest
 
-from portable_fdsnws_dataselect.server import _get_int
+from portable_fdsnws_dataselect.server import (
+    ConfigError,
+    _get_int,
+    _validate_table_name,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -83,3 +87,47 @@ def test_get_int_missing_section_key():
     """An entirely absent section should use the default."""
     config = ConfigParser()
     assert _get_int(config, "server", "port", 9999) == 9999
+
+
+# ---------------------------------------------------------------------------
+# _validate_table_name
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "tsindex",
+        "tsindex_summary",
+        "_internal",
+        "Table1",
+        "a",
+        "x" * 64,  # 64 chars: 1 leading + 63 trailing → boundary OK
+    ],
+)
+def test_validate_table_name_accepts_safe_names(name):
+    _validate_table_name(name, "test")  # must not raise
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "",                       # empty
+        "1tsindex",               # leading digit
+        "ts index",               # whitespace
+        "ts;DROP TABLE x",        # SQL injection attempt
+        "ts'index",               # quote
+        'ts"index',               # double quote
+        "ts-index",               # hyphen
+        "ts.index",               # dot
+        "x" * 65,                 # too long
+        "ts\nindex",              # newline
+    ],
+)
+def test_validate_table_name_rejects_unsafe_names(name):
+    with pytest.raises(ConfigError):
+        _validate_table_name(name, "test")
+
+
+def test_validate_table_name_rejects_non_string():
+    with pytest.raises(ConfigError):
+        _validate_table_name(None, "test")  # type: ignore[arg-type]

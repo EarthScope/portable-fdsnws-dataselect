@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import logging.config
 import os
+import re
 import socket
 import sqlite3
 import sys
@@ -40,10 +41,10 @@ class ThreadPoolMixIn(ThreadingMixIn):
             t.daemon = True
             t.start()
 
+        # Loop forever; shutdown happens via SIGINT / SystemExit propagating
+        # out, after which the caller is responsible for calling server_close.
         while True:
             self.handle_request()
-
-        self.server_close()
 
     def process_request_thread(self) -> None:
         while True:
@@ -145,6 +146,29 @@ class ConfigError(Exception):
     """Raised when the server configuration is invalid."""
 
 
+# SQLite identifier (table/column name) whitelist: must start with a letter
+# or underscore, followed by letters, digits, or underscores. Limited to a
+# reasonable length to avoid pathological inputs.
+_SQL_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+
+
+def _validate_table_name(value: str, field: str) -> None:
+    """Reject table-name strings that aren't safe to splice into SQL.
+
+    Table and column identifiers cannot be bound as SQL parameters, so we
+    enforce a strict whitelist at config-load time and refuse to start the
+    server on anything outside it. This way the SQL-construction code in
+    handler.py never sees an untrusted identifier even if it's interpolated.
+
+    :raises ConfigError: When *value* fails the whitelist.
+    """
+    if not isinstance(value, str) or not _SQL_IDENT_RE.match(value):
+        raise ConfigError(
+            f"Invalid {field} name '{value}': must match "
+            f"[A-Za-z_][A-Za-z0-9_]{{0,63}}"
+        )
+
+
 def verify_configuration(params: dict) -> None:
     """
     Verify the server configuration.
@@ -154,6 +178,10 @@ def verify_configuration(params: dict) -> None:
 
     :raises ConfigError: On any configuration problem.
     """
+    _validate_table_name(params["index_table"], "index_db:table")
+    if "summary_table" in params:
+        _validate_table_name(params["summary_table"], "index_db:summary_table")
+
     if not os.path.isfile(params["dbfile"]):
         raise ConfigError(f"Cannot find database file '{params['dbfile']}'")
 
